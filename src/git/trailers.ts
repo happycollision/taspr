@@ -20,9 +20,7 @@ export async function parseTrailers(commitBody: string): Promise<CommitTrailers>
 
   // Use Buffer for stdin redirection with Bun shell
   const input = Buffer.from(commitBody);
-  const result = await $`git interpret-trailers --parse < ${input}`
-    .nothrow()
-    .text();
+  const result = await $`git interpret-trailers --parse < ${input}`.nothrow().text();
 
   if (!result.trim()) {
     return {};
@@ -54,7 +52,7 @@ export async function parseTrailers(commitBody: string): Promise<CommitTrailers>
  */
 export async function getCommitTrailers(
   commitHash: string,
-  options: GitOptions = {}
+  options: GitOptions = {},
 ): Promise<CommitTrailers> {
   const { cwd } = options;
 

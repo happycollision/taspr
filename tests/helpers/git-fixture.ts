@@ -1,7 +1,7 @@
-import { $ } from 'bun';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { $ } from "bun";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export interface GitFixture {
   path: string;
@@ -13,11 +13,11 @@ export interface GitFixture {
 
 export async function createGitFixture(): Promise<GitFixture> {
   // Create the "origin" bare repository first
-  const originPath = await mkdtemp(join(tmpdir(), 'taspr-test-origin-'));
+  const originPath = await mkdtemp(join(tmpdir(), "taspr-test-origin-"));
   await $`git init --bare ${originPath}`.quiet();
 
   // Create the working repository
-  const path = await mkdtemp(join(tmpdir(), 'taspr-test-'));
+  const path = await mkdtemp(join(tmpdir(), "taspr-test-"));
   await $`git init ${path}`.quiet();
   await $`git -C ${path} config user.email "test@example.com"`.quiet();
   await $`git -C ${path} config user.name "Test User"`.quiet();
@@ -26,8 +26,8 @@ export async function createGitFixture(): Promise<GitFixture> {
   await $`git -C ${path} remote add origin ${originPath}`.quiet();
 
   // Create initial commit on main
-  const readmePath = join(path, 'README.md');
-  await Bun.write(readmePath, '# Test Repo\n');
+  const readmePath = join(path, "README.md");
+  await Bun.write(readmePath, "# Test Repo\n");
   await $`git -C ${path} add .`.quiet();
   await $`git -C ${path} commit -m "Initial commit"`.quiet();
 
@@ -36,7 +36,7 @@ export async function createGitFixture(): Promise<GitFixture> {
 
   async function commit(
     message: string,
-    options?: { trailers?: Record<string, string> }
+    options?: { trailers?: Record<string, string> },
   ): Promise<string> {
     // Create a file change
     const filename = `file-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`;
@@ -45,7 +45,7 @@ export async function createGitFixture(): Promise<GitFixture> {
 
     let fullMessage = message;
     if (options?.trailers) {
-      fullMessage += '\n\n';
+      fullMessage += "\n\n";
       for (const [key, value] of Object.entries(options.trailers)) {
         fullMessage += `${key}: ${value}\n`;
       }

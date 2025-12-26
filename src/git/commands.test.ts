@@ -1,7 +1,12 @@
 import { test, expect, afterEach, describe } from "bun:test";
 import { $ } from "bun";
 import { createGitFixture, type GitFixture } from "../../tests/helpers/git-fixture.ts";
-import { getStackCommits, getMergeBase, getCurrentBranch, hasUncommittedChanges } from "./commands.ts";
+import {
+  getStackCommits,
+  getMergeBase,
+  getCurrentBranch,
+  hasUncommittedChanges,
+} from "./commands.ts";
 import { join } from "node:path";
 
 let fixture: GitFixture | null = null;

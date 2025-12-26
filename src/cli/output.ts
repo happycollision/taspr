@@ -5,11 +5,7 @@ const SEPARATOR = "─".repeat(72);
 /**
  * Format the stack view for terminal output.
  */
-export function formatStackView(
-  units: PRUnit[],
-  branchName: string,
-  commitCount: number
-): string {
+export function formatStackView(units: PRUnit[], branchName: string, commitCount: number): string {
   if (units.length === 0) {
     return "No commits ahead of origin/main";
   }
@@ -17,7 +13,9 @@ export function formatStackView(
   const lines: string[] = [];
 
   // Header
-  lines.push(`Stack: ${branchName} (${commitCount} commit${commitCount === 1 ? "" : "s"}, ${units.length} PR${units.length === 1 ? "" : "s"})`);
+  lines.push(
+    `Stack: ${branchName} (${commitCount} commit${commitCount === 1 ? "" : "s"}, ${units.length} PR${units.length === 1 ? "" : "s"})`,
+  );
   lines.push("");
 
   // PRUnits
@@ -87,13 +85,17 @@ export function formatValidationError(result: Exclude<StackParseResult, { ok: tr
       lines.push(`    starts at ${result.group1.startCommit.slice(0, 8)}`);
       lines.push("");
       lines.push(`  Group "${result.group2.title}" (${result.group2.id}):`);
-      lines.push(`    starts at ${result.group2.startCommit.slice(0, 8)} (inside "${result.group1.title}")`);
+      lines.push(
+        `    starts at ${result.group2.startCommit.slice(0, 8)} (inside "${result.group1.title}")`,
+      );
       lines.push("");
       lines.push("  Groups cannot overlap. Close the first group before starting a new one.");
       break;
 
     case "orphan-group-end":
-      lines.push(`✗ Error: Group end without matching start at commit ${result.commit.slice(0, 8)}`);
+      lines.push(
+        `✗ Error: Group end without matching start at commit ${result.commit.slice(0, 8)}`,
+      );
       lines.push("");
       lines.push(`  Found Taspr-Group-End: ${result.groupId} but no matching`);
       lines.push("  Taspr-Group-Start was found in preceding commits.");

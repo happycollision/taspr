@@ -4,7 +4,7 @@ import { detectPRUnits, parseStack, type CommitWithTrailers } from "./stack.ts";
 function makeCommit(
   hash: string,
   subject: string,
-  trailers: Record<string, string> = {}
+  trailers: Record<string, string> = {},
 ): CommitWithTrailers {
   return {
     hash,
@@ -201,7 +201,7 @@ describe("core/stack", () => {
 
       const units = detectPRUnits(commits);
 
-      expect(units.map(u => u.commits[0])).toEqual(["first", "second", "third"]);
+      expect(units.map((u) => u.commits[0])).toEqual(["first", "second", "third"]);
     });
 
     test("handles single-commit group (start and end on same commit)", () => {

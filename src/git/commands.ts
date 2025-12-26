@@ -25,7 +25,7 @@ export async function getMergeBase(options: GitOptions = {}): Promise<string> {
       : await $`git rev-parse --verify origin/main 2>/dev/null`.nothrow();
     if (remoteCheck.exitCode !== 0) {
       throw new Error(
-        "No origin/main branch found. Please ensure you have a remote named 'origin' with a 'main' branch."
+        "No origin/main branch found. Please ensure you have a remote named 'origin' with a 'main' branch.",
       );
     }
     throw new Error("Failed to find merge-base with origin/main");
@@ -54,10 +54,10 @@ export async function getStackCommits(options: GitOptions = {}): Promise<CommitI
   const commits: CommitInfo[] = [];
 
   // Split by record separator and filter empty entries
-  const records = result.split('\x01').filter(r => r.trim());
+  const records = result.split("\x01").filter((r) => r.trim());
 
   for (const record of records) {
-    const [hashRaw, subject, body] = record.split('\x00');
+    const [hashRaw, subject, body] = record.split("\x00");
     if (hashRaw && subject !== undefined && body !== undefined) {
       commits.push({
         hash: hashRaw.trim(),
@@ -98,7 +98,7 @@ export async function getCurrentBranch(options: GitOptions = {}): Promise<string
  * Returns commits in oldest-to-newest order (bottom of stack first).
  */
 export async function getStackCommitsWithTrailers(
-  options: GitOptions = {}
+  options: GitOptions = {},
 ): Promise<CommitWithTrailers[]> {
   const commits = await getStackCommits(options);
 
@@ -109,7 +109,7 @@ export async function getStackCommitsWithTrailers(
         ...commit,
         trailers,
       };
-    })
+    }),
   );
 
   return commitsWithTrailers;
