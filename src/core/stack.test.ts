@@ -356,7 +356,7 @@ describe("core/stack", () => {
       }
     });
 
-    test("ignores Group-End without matching Group-Start", () => {
+    test("returns orphan-group-end error when Group-End has no matching Start", () => {
       const commits = [
         makeCommit("aaa111", "Orphan end", {
           "Taspr-Commit-Id": "a1",
@@ -367,12 +367,32 @@ describe("core/stack", () => {
 
       const result = parseStack(commits);
 
-      // Should succeed - orphan end is just ignored
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.units).toHaveLength(2);
-        expect(result.units[0]?.type).toBe("single");
-        expect(result.units[1]?.type).toBe("single");
+      expect(result.ok).toBe(false);
+      if (!result.ok && result.error === "orphan-group-end") {
+        expect(result.groupId).toBe("g1");
+        expect(result.commit).toBe("aaa111");
+      }
+    });
+
+    test("returns orphan-group-end error when Group-End doesn't match active group", () => {
+      const commits = [
+        makeCommit("aaa111", "Start group g1", {
+          "Taspr-Commit-Id": "a1",
+          "Taspr-Group-Start": "g1",
+          "Taspr-Group-Title": "Group One",
+        }),
+        makeCommit("bbb222", "End with wrong ID", {
+          "Taspr-Commit-Id": "b2",
+          "Taspr-Group-End": "g2", // Wrong ID - should be g1
+        }),
+      ];
+
+      const result = parseStack(commits);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok && result.error === "orphan-group-end") {
+        expect(result.groupId).toBe("g2");
+        expect(result.commit).toBe("bbb222");
       }
     });
   });

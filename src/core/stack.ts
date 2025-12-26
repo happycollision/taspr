@@ -107,6 +107,26 @@ export function parseStack(commits: CommitWithTrailers[]): StackParseResult {
       };
     }
 
+    // Check for orphan group end (end without matching start)
+    if (endId && !activeGroup) {
+      return {
+        ok: false,
+        error: "orphan-group-end",
+        groupId: endId,
+        commit: commit.hash,
+      };
+    }
+
+    // Check for mismatched group end (end doesn't match current group)
+    if (endId && activeGroup && endId !== activeGroup.id) {
+      return {
+        ok: false,
+        error: "orphan-group-end",
+        groupId: endId,
+        commit: commit.hash,
+      };
+    }
+
     if (endId && activeGroup && endId === activeGroup.id) {
       activeGroup = null;
     }

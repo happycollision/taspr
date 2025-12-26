@@ -23,4 +23,5 @@ export interface GroupInfo {
 export type StackParseResult =
   | { ok: true; units: PRUnit[] }
   | { ok: false; error: 'unclosed-group'; groupId: string; startCommit: string; groupTitle: string }
-  | { ok: false; error: 'overlapping-groups'; group1: GroupInfo; group2: GroupInfo; overlappingCommit: string };
+  | { ok: false; error: 'overlapping-groups'; group1: GroupInfo; group2: GroupInfo; overlappingCommit: string }
+  | { ok: false; error: 'orphan-group-end'; groupId: string; commit: string };
