@@ -10,7 +10,7 @@
     "dev": "bun run src/cli/index.ts",
     "build": "bun build src/cli/index.ts --compile --outfile dist/taspr",
     "test": "bun test",
-    "lint": "oxlint",
+    "lint": "oxlint --type-aware",
     "types": "tsc --noEmit",
     "format": "oxfmt",
     "check": "bun run types && bun run lint && bun run format --check"
@@ -21,7 +21,8 @@
   "devDependencies": {
     "@types/bun": "latest",
     "oxfmt": "^0.20.0",
-    "oxlint": "^1.35.0"
+    "oxlint": "^1.35.0",
+    "oxlint-tsgolint": "^0.10.0"
   },
   "peerDependencies": {
     "typescript": "^5"
