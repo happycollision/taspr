@@ -63,3 +63,27 @@ export async function getCommitTrailers(
 
   return parseTrailers(body);
 }
+
+/**
+ * Add trailers to a commit message string using git interpret-trailers.
+ * Preserves existing trailers and adds new ones.
+ */
+export async function addTrailers(
+  message: string,
+  trailers: Record<string, string>,
+): Promise<string> {
+  if (Object.keys(trailers).length === 0) {
+    return message;
+  }
+
+  // Ensure message ends with newline for proper git interpret-trailers behavior
+  const normalizedMessage = message.endsWith("\n") ? message : message + "\n";
+  const input = Buffer.from(normalizedMessage);
+  const trailerArgs = Object.entries(trailers).flatMap(([key, value]) => [
+    "--trailer",
+    `${key}: ${value}`,
+  ]);
+
+  const result = await $`git interpret-trailers ${trailerArgs} < ${input}`.text();
+  return result.trimEnd();
+}

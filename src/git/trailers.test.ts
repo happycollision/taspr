@@ -1,6 +1,6 @@
 import { test, expect, afterEach, describe } from "bun:test";
 import { createGitFixture, type GitFixture } from "../../tests/helpers/git-fixture.ts";
-import { parseTrailers, getCommitTrailers } from "./trailers.ts";
+import { parseTrailers, getCommitTrailers, addTrailers } from "./trailers.ts";
 
 let fixture: GitFixture | null = null;
 
@@ -156,6 +156,63 @@ Taspr-Group-End: f7e8d9c0`;
       expect(trailers["Co-authored-by"]).toBe("Alice <alice@example.com>");
       expect(trailers["Signed-off-by"]).toBe("Bob <bob@example.com>");
       expect(trailers["Taspr-Commit-Id"]).toBeUndefined();
+    });
+  });
+
+  describe("addTrailers", () => {
+    test("adds single trailer to message without trailers", async () => {
+      const message = "Add feature\n\nSome description.";
+      const result = await addTrailers(message, { "Taspr-Commit-Id": "a1b2c3d4" });
+
+      expect(result).toContain("Taspr-Commit-Id: a1b2c3d4");
+      expect(result).toContain("Add feature");
+      expect(result).toContain("Some description.");
+    });
+
+    test("adds multiple trailers", async () => {
+      const message = "Add feature";
+      const result = await addTrailers(message, {
+        "Taspr-Commit-Id": "a1b2c3d4",
+        "Taspr-Group-Start": "f7e8d9c0",
+      });
+
+      expect(result).toContain("Taspr-Commit-Id: a1b2c3d4");
+      expect(result).toContain("Taspr-Group-Start: f7e8d9c0");
+    });
+
+    test("preserves existing trailers", async () => {
+      const message = "Add feature\n\nCo-authored-by: Alice <alice@example.com>";
+      const result = await addTrailers(message, { "Taspr-Commit-Id": "a1b2c3d4" });
+
+      expect(result).toContain("Co-authored-by: Alice <alice@example.com>");
+      expect(result).toContain("Taspr-Commit-Id: a1b2c3d4");
+    });
+
+    test("returns original message when no trailers provided", async () => {
+      const message = "Add feature\n\nSome description.";
+      const result = await addTrailers(message, {});
+
+      expect(result).toBe(message);
+    });
+
+    test("works with message that has no body", async () => {
+      const message = "Add feature";
+      const result = await addTrailers(message, { "Taspr-Commit-Id": "a1b2c3d4" });
+
+      expect(result).toContain("Add feature");
+      expect(result).toContain("Taspr-Commit-Id: a1b2c3d4");
+    });
+
+    test("roundtrip: added trailers can be parsed back", async () => {
+      const message = "Add feature";
+      const withTrailers = await addTrailers(message, {
+        "Taspr-Commit-Id": "a1b2c3d4",
+        "Taspr-Group-Start": "f7e8d9c0",
+      });
+
+      const parsed = await parseTrailers(withTrailers);
+      expect(parsed["Taspr-Commit-Id"]).toBe("a1b2c3d4");
+      expect(parsed["Taspr-Group-Start"]).toBe("f7e8d9c0");
     });
   });
 });
