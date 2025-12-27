@@ -11,8 +11,9 @@ program.command("view").description("View the current stack of commits").action(
 
 program
   .command("sync")
-  .description("Add Taspr-Commit-Id to commits and sync state")
-  .action(syncCommand);
+  .description("Sync stack with GitHub: add IDs, push branches, and optionally create PRs")
+  .option("--open", "Create PRs for branches that don't have them")
+  .action((options) => syncCommand(options));
 
 program
   .command("land")
