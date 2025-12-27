@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
 import { viewCommand } from "./commands/view.ts";
+import { syncCommand } from "./commands/sync.ts";
 
 const program = new Command();
 
@@ -10,11 +11,8 @@ program.command("view").description("View the current stack of commits").action(
 
 program
   .command("sync")
-  .description("Sync commits and push to GitHub as PRs")
-  .option("--open", "Open PRs for new branches")
-  .action(() => {
-    console.log("sync command not yet implemented");
-  });
+  .description("Add Taspr-Commit-Id to commits and sync state")
+  .action(syncCommand);
 
 program
   .command("land")
