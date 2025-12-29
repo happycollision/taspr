@@ -1,8 +1,11 @@
-import { test, expect, afterEach, describe } from "bun:test";
+import { test, expect, afterEach, describe, setDefaultTimeout } from "bun:test";
 import { $ } from "bun";
 import { createGitFixture, type GitFixture } from "../../tests/helpers/git-fixture.ts";
 import { getWorkingTreeStatus, requireCleanWorkingTree, DirtyWorkingTreeError } from "./status.ts";
 import { join } from "node:path";
+
+// Git operations can be slow under load, increase default timeout
+setDefaultTimeout(15_000);
 
 let fixture: GitFixture | null = null;
 
