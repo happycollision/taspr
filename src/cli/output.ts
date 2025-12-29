@@ -1,4 +1,4 @@
-import type { PRUnit, EnrichedPRUnit, StackParseResult } from "../types.ts";
+import type { EnrichedPRUnit, StackParseResult } from "../types.ts";
 
 const SEPARATOR = "─".repeat(72);
 
@@ -37,11 +37,17 @@ export function formatStackView(
 
   const lines: string[] = [];
 
+  // Count opened PRs (only OPEN state counts)
+  const openedPRCount = units.filter((u) => u.pr?.state === "OPEN").length;
+
   // Header
   lines.push(
-    `Stack: ${branchName} (${commitCount} commit${commitCount === 1 ? "" : "s"}, ${units.length} PR${units.length === 1 ? "" : "s"})`,
+    `Stack: ${branchName} (${commitCount} commit${commitCount === 1 ? "" : "s"}, PRs: ${openedPRCount}/${units.length} opened)`,
   );
   lines.push("");
+
+  // Origin/main indicator
+  lines.push("  → origin/main");
 
   // PRUnits
   for (const unit of units) {
@@ -49,11 +55,16 @@ export function formatStackView(
     lines.push(formatPRUnit(unit));
   }
 
-  // Footer
   lines.push(SEPARATOR);
-  lines.push("  ↓ origin/main");
 
   return lines.join("\n");
+}
+
+/**
+ * Check if a unit has a real commit ID (not just a hash fallback).
+ */
+function hasCommitId(unit: EnrichedPRUnit): boolean {
+  return unit.commitIds.length > 0;
 }
 
 /**
@@ -68,16 +79,19 @@ function formatPRUnit(unit: EnrichedPRUnit): string {
   if (unit.type === "single") {
     // Single commit
     lines.push(`  ${status} ${prNum}${unit.title}`);
-    lines.push(`    └─ ${unit.id}`);
+    const idDisplay = hasCommitId(unit) ? unit.id : "(no commit ID yet)";
+    lines.push(`    └─ ${idDisplay}`);
   } else {
     // Group
-    lines.push(`  ${status} ${prNum}${unit.title} [${unit.id}]`);
+    const groupIdDisplay = hasCommitId(unit) ? `[${unit.id}]` : "(no commit ID yet)";
+    lines.push(`  ${status} ${prNum}${unit.title} ${groupIdDisplay}`);
 
     // List commits with tree structure
-    for (let i = 0; i < unit.commitIds.length; i++) {
-      const isLast = i === unit.commitIds.length - 1;
+    const commitCount = unit.commits.length;
+    for (let i = 0; i < commitCount; i++) {
+      const isLast = i === commitCount - 1;
       const prefix = isLast ? "└─" : "├─";
-      const commitId = unit.commitIds[i] || unit.commits[i]?.slice(0, 8) || "unknown";
+      const commitId = unit.commitIds[i] || "(no commit ID yet)";
       lines.push(`    ${prefix} ${commitId}`);
     }
   }
