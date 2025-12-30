@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { PRNotFastForwardError, PRNotFoundError } from "./pr.ts";
+import { PRNotFastForwardError, PRNotFoundError, PRNotReadyError } from "./pr.ts";
 
 describe("github/pr", () => {
   describe("PRNotFastForwardError", () => {
@@ -18,6 +18,16 @@ describe("github/pr", () => {
       expect(error.message).toBe("PR #456 not found");
       expect(error.prNumber).toBe(456);
       expect(error.name).toBe("PRNotFoundError");
+    });
+  });
+
+  describe("PRNotReadyError", () => {
+    test("includes PR number and reasons", () => {
+      const error = new PRNotReadyError(789, ["CI checks are failing", "Review is required"]);
+      expect(error.message).toBe("PR #789 is not ready to land");
+      expect(error.prNumber).toBe(789);
+      expect(error.reasons).toEqual(["CI checks are failing", "Review is required"]);
+      expect(error.name).toBe("PRNotReadyError");
     });
   });
 });

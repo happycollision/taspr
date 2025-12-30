@@ -6,8 +6,10 @@ import {
   findPRByBranch,
   landPR,
   deleteRemoteBranch,
+  getPRMergeStatus,
   PRNotFastForwardError,
   PRNotFoundError,
+  PRNotReadyError,
 } from "../../github/pr.ts";
 import type { PRUnit, EnrichedPRUnit } from "../../types.ts";
 
@@ -64,6 +66,24 @@ export async function landCommand(): Promise<void> {
       return;
     }
 
+    // Check if PR is ready to land (CI passing, reviews approved)
+    const mergeStatus = await getPRMergeStatus(bottomPR.pr.number);
+
+    if (!mergeStatus.isReady) {
+      const reasons: string[] = [];
+      if (mergeStatus.checksStatus === "failing") {
+        reasons.push("CI checks are failing");
+      } else if (mergeStatus.checksStatus === "pending") {
+        reasons.push("CI checks are still running");
+      }
+      if (mergeStatus.reviewDecision === "changes_requested") {
+        reasons.push("Changes have been requested");
+      } else if (mergeStatus.reviewDecision === "review_required") {
+        reasons.push("Review is required");
+      }
+      throw new PRNotReadyError(bottomPR.pr.number, reasons);
+    }
+
     console.log(`Merging PR #${bottomPR.pr.number} (${bottomPR.title})...`);
 
     await landPR(bottomPR.pr.number);
@@ -85,6 +105,15 @@ export async function landCommand(): Promise<void> {
 
     if (error instanceof PRNotFoundError) {
       console.error(`✗ PR #${error.prNumber} not found`);
+      process.exit(1);
+    }
+
+    if (error instanceof PRNotReadyError) {
+      console.error(`✗ PR #${error.prNumber} is not ready to land:`);
+      for (const reason of error.reasons) {
+        console.error(`  • ${reason}`);
+      }
+      console.error("\nRun 'taspr view' to see status.");
       process.exit(1);
     }
 

@@ -300,7 +300,10 @@ describe.skipIf(SKIP)("GitHub Integration: land", () => {
     }
   });
 
-  test(
+  // NOTE: This test requires waiting for CI, so it's in the slow tests section
+  const SKIP_CI_TESTS_LAND = !process.env.GITHUB_CI_TESTS;
+
+  test.skipIf(SKIP_CI_TESTS_LAND)(
     "lands a single PR and deletes the branch",
     async () => {
       // Clone the test repo locally
@@ -311,10 +314,11 @@ describe.skipIf(SKIP)("GitHub Integration: land", () => {
       await $`git -C ${localDir} config user.email "test@example.com"`.quiet();
       await $`git -C ${localDir} config user.name "Test User"`.quiet();
 
-      // Create a feature branch with a commit
-      await $`git -C ${localDir} checkout -b feature/land-test`.quiet();
-      await Bun.write(join(localDir, "land-test.txt"), "test content for landing\n");
-      await $`git -C ${localDir} add land-test.txt`.quiet();
+      // Create a feature branch with a commit (use unique filename to avoid conflicts)
+      const uniqueId = Date.now().toString(36);
+      await $`git -C ${localDir} checkout -b feature/land-test-${uniqueId}`.quiet();
+      await Bun.write(join(localDir, `land-test-${uniqueId}.txt`), "test content for landing\n");
+      await $`git -C ${localDir} add .`.quiet();
       await $`git -C ${localDir} commit -m "Add file to land"`.quiet();
 
       // Run taspr sync --open to create the PR
@@ -334,6 +338,9 @@ describe.skipIf(SKIP)("GitHub Integration: land", () => {
       if (!pr) throw new Error("PR not found");
       const prNumber = pr.number;
       const branchName = pr.headRefName;
+
+      // Wait for CI to pass before landing
+      await github.waitForCI(prNumber, { timeout: 180000 });
 
       // Run taspr land
       const landResult = await runLand(localDir);
@@ -367,10 +374,13 @@ describe.skipIf(SKIP)("GitHub Integration: land", () => {
       const mainLog = await $`git -C ${localDir} log origin/main --oneline -5`.text();
       expect(mainLog).toContain("Add file to land");
     },
-    { timeout: 60000 },
+    { timeout: 200000 },
   );
 
-  test(
+  // NOTE: This test requires waiting for CI, so it's in the slow tests section
+  const SKIP_CI_TESTS_FF = !process.env.GITHUB_CI_TESTS;
+
+  test.skipIf(SKIP_CI_TESTS_FF)(
     "fails to land when PR cannot be fast-forwarded",
     async () => {
       // Clone the test repo locally
@@ -381,26 +391,37 @@ describe.skipIf(SKIP)("GitHub Integration: land", () => {
       await $`git -C ${localDir} config user.email "test@example.com"`.quiet();
       await $`git -C ${localDir} config user.name "Test User"`.quiet();
 
-      // Create a feature branch with a commit
-      await $`git -C ${localDir} checkout -b feature/land-conflict-test`.quiet();
-      await Bun.write(join(localDir, "conflict-test.txt"), "feature content\n");
-      await $`git -C ${localDir} add conflict-test.txt`.quiet();
+      // Create a feature branch with a commit (use unique filename to avoid conflicts)
+      const uniqueId = Date.now().toString(36);
+      await $`git -C ${localDir} checkout -b feature/land-conflict-test-${uniqueId}`.quiet();
+      await Bun.write(join(localDir, `conflict-test-${uniqueId}.txt`), "feature content\n");
+      await $`git -C ${localDir} add .`.quiet();
       await $`git -C ${localDir} commit -m "Add conflicting file"`.quiet();
 
       // Run taspr sync --open to create the PR
       const syncResult = await runSync(localDir, { open: true });
       expect(syncResult.exitCode).toBe(0);
 
+      // Find the PR
+      const prList =
+        await $`gh pr list --repo ${github.owner}/${github.repo} --state open --json number,title`.text();
+      const prs = JSON.parse(prList) as Array<{ number: number; title: string }>;
+      const pr = prs.find((p) => p.title.includes("Add conflicting file"));
+      if (!pr) throw new Error("PR not found");
+
+      // Wait for CI to pass first (so CI check doesn't fail before fast-forward check)
+      await github.waitForCI(pr.number, { timeout: 180000 });
+
       // Now push a different commit directly to main (simulating someone else merging)
       await $`git -C ${localDir} checkout main`.quiet();
       await $`git -C ${localDir} pull origin main`.quiet();
-      await Bun.write(join(localDir, "main-change.txt"), "main change\n");
-      await $`git -C ${localDir} add main-change.txt`.quiet();
+      await Bun.write(join(localDir, `main-change-${uniqueId}.txt`), "main change\n");
+      await $`git -C ${localDir} add .`.quiet();
       await $`git -C ${localDir} commit -m "Direct commit to main"`.quiet();
       await $`git -C ${localDir} push origin main`.quiet();
 
       // Go back to feature branch
-      await $`git -C ${localDir} checkout feature/land-conflict-test`.quiet();
+      await $`git -C ${localDir} checkout feature/land-conflict-test-${uniqueId}`.quiet();
 
       // Try to land - should fail because main has diverged
       const landResult = await runLand(localDir);
@@ -409,7 +430,7 @@ describe.skipIf(SKIP)("GitHub Integration: land", () => {
       expect(landResult.stderr).toContain("is not ready to land");
       expect(landResult.stderr).toContain("Rebase may be required");
     },
-    { timeout: 60000 },
+    { timeout: 200000 },
   );
 
   test(
@@ -423,10 +444,11 @@ describe.skipIf(SKIP)("GitHub Integration: land", () => {
       await $`git -C ${localDir} config user.email "test@example.com"`.quiet();
       await $`git -C ${localDir} config user.name "Test User"`.quiet();
 
-      // Create a feature branch with a commit but DON'T create a PR
-      await $`git -C ${localDir} checkout -b feature/no-pr-test`.quiet();
-      await Bun.write(join(localDir, "no-pr-test.txt"), "no PR for this\n");
-      await $`git -C ${localDir} add no-pr-test.txt`.quiet();
+      // Create a feature branch with a commit but DON'T create a PR (use unique filename)
+      const uniqueId = Date.now().toString(36);
+      await $`git -C ${localDir} checkout -b feature/no-pr-test-${uniqueId}`.quiet();
+      await Bun.write(join(localDir, `no-pr-test-${uniqueId}.txt`), "no PR for this\n");
+      await $`git -C ${localDir} add .`.quiet();
       await $`git -C ${localDir} commit -m "Commit without PR"`.quiet();
 
       // Run sync WITHOUT --open (just adds IDs, no PR)
@@ -440,5 +462,51 @@ describe.skipIf(SKIP)("GitHub Integration: land", () => {
       expect(landResult.stdout).toContain("No open PRs in stack");
     },
     { timeout: 60000 },
+  );
+
+  // NOTE: CI tests are slow (wait for GitHub Actions) - skip by default
+  // Run with GITHUB_CI_TESTS=1 to enable
+  const SKIP_CI_TESTS = !process.env.GITHUB_CI_TESTS;
+
+  test.skipIf(SKIP_CI_TESTS)(
+    "fails to land when CI checks are failing",
+    async () => {
+      // Clone the test repo locally
+      const tmpResult = await $`mktemp -d`.text();
+      localDir = tmpResult.trim();
+
+      await $`git clone ${github.repoUrl}.git ${localDir}`.quiet();
+      await $`git -C ${localDir} config user.email "test@example.com"`.quiet();
+      await $`git -C ${localDir} config user.name "Test User"`.quiet();
+
+      // Create a feature branch with a FAIL_CI commit (use unique filename)
+      const uniqueId = Date.now().toString(36);
+      await $`git -C ${localDir} checkout -b feature/ci-fail-land-test-${uniqueId}`.quiet();
+      await Bun.write(join(localDir, `fail-ci-land-${uniqueId}.txt`), "this should fail CI\n");
+      await $`git -C ${localDir} add .`.quiet();
+      await $`git -C ${localDir} commit -m "[FAIL_CI] Add file that should fail CI"`.quiet();
+
+      // Run taspr sync --open to create the PR
+      const syncResult = await runSync(localDir, { open: true });
+      expect(syncResult.exitCode).toBe(0);
+
+      // Find PR by title
+      const prList =
+        await $`gh pr list --repo ${github.owner}/${github.repo} --state open --json number,title`.text();
+      const prs = JSON.parse(prList) as Array<{ number: number; title: string }>;
+      const pr = prs.find((p) => p.title.includes("FAIL_CI"));
+      if (!pr) throw new Error("PR not found");
+
+      // Wait for CI to complete (and fail)
+      await github.waitForCI(pr.number, { timeout: 180000 });
+
+      // Try to land - should fail because CI is failing
+      const landResult = await runLand(localDir);
+
+      expect(landResult.exitCode).toBe(1);
+      expect(landResult.stderr).toContain("is not ready to land");
+      expect(landResult.stderr).toContain("CI checks are failing");
+    },
+    { timeout: 200000 },
   );
 });

@@ -23,6 +23,16 @@ export class PRNotFoundError extends Error {
   }
 }
 
+export class PRNotReadyError extends Error {
+  constructor(
+    public prNumber: number,
+    public reasons: string[],
+  ) {
+    super(`PR #${prNumber} is not ready to land`);
+    this.name = "PRNotReadyError";
+  }
+}
+
 export interface PRInfo {
   number: number;
   url: string;
@@ -35,6 +45,15 @@ export interface CreatePROptions {
   head: string;
   base: string;
   body?: string;
+}
+
+export type ChecksStatus = "pending" | "passing" | "failing";
+export type ReviewDecision = "approved" | "changes_requested" | "review_required" | "none";
+
+export interface PRMergeStatus {
+  checksStatus: ChecksStatus;
+  reviewDecision: ReviewDecision;
+  isReady: boolean;
 }
 
 /**
@@ -102,6 +121,76 @@ export async function createPR(options: CreatePROptions): Promise<{ number: numb
     number: parseInt(match[1], 10),
     url,
   };
+}
+
+/**
+ * Get the merge status of a PR (CI checks and review decision).
+ */
+export async function getPRMergeStatus(prNumber: number): Promise<PRMergeStatus> {
+  await ensureGhInstalled();
+
+  // Get PR status checks and review decision
+  const result = await $`gh pr view ${prNumber} --json statusCheckRollup,reviewDecision`.nothrow();
+
+  if (result.exitCode !== 0) {
+    throw new PRNotFoundError(prNumber);
+  }
+
+  const data = JSON.parse(result.stdout.toString()) as {
+    statusCheckRollup: Array<{
+      status: string;
+      conclusion: string | null;
+      state: string;
+    }>;
+    reviewDecision: string;
+  };
+
+  // Determine checks status
+  let checksStatus: ChecksStatus;
+  const checks = data.statusCheckRollup || [];
+
+  if (checks.length === 0) {
+    // No checks configured - consider it passing
+    checksStatus = "passing";
+  } else {
+    const hasFailure = checks.some(
+      (c) => c.conclusion === "FAILURE" || c.conclusion === "ERROR" || c.state === "FAILURE",
+    );
+    const allComplete = checks.every(
+      (c) => c.status === "COMPLETED" || c.state === "SUCCESS" || c.state === "FAILURE",
+    );
+
+    if (hasFailure) {
+      checksStatus = "failing";
+    } else if (allComplete) {
+      checksStatus = "passing";
+    } else {
+      checksStatus = "pending";
+    }
+  }
+
+  // Determine review decision
+  let reviewDecision: ReviewDecision;
+  switch (data.reviewDecision) {
+    case "APPROVED":
+      reviewDecision = "approved";
+      break;
+    case "CHANGES_REQUESTED":
+      reviewDecision = "changes_requested";
+      break;
+    case "REVIEW_REQUIRED":
+      reviewDecision = "review_required";
+      break;
+    default:
+      // Empty string or null means no review required by branch protection
+      reviewDecision = "none";
+  }
+
+  // PR is ready if checks are passing and reviews are approved (or not required)
+  const isReady =
+    checksStatus === "passing" && (reviewDecision === "approved" || reviewDecision === "none");
+
+  return { checksStatus, reviewDecision, isReady };
 }
 
 /**
