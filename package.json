@@ -34,11 +34,10 @@
   },
   "lint-staged": {
     "*.{js,ts,tsx,jsx}": [
-      "oxlint --type-aware",
-      "oxfmt"
+      "oxlint --type-aware"
     ],
-    "*.json": [
-      "oxfmt"
+    "*": [
+      "oxfmt --no-error-on-unmatched-pattern"
     ]
   }
 }
