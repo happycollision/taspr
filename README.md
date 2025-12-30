@@ -5,10 +5,12 @@ A CLI tool for managing **stacked pull requests** on GitHub. Organize related co
 ## Why Stacked PRs?
 
 Traditional PR workflows force you to either:
+
 - Submit one massive PR that's hard to review
 - Manually manage dependent branches and rebase chains
 
 Taspr automates the stacked PR workflow:
+
 - Each commit (or group of commits) becomes its own PR
 - PRs are automatically chained with proper base branches
 - Rebasing and syncing is handled for you
@@ -43,7 +45,6 @@ If you are developing, perhaps you want to point to this dist folder in your cur
 export PATH="$PATH:$(pwd)/dist"
 ```
 
-
 ### Requirements
 
 - [Bun](https://bun.sh) runtime
@@ -76,6 +77,7 @@ taspr view
 ```
 
 Output shows:
+
 - Commit messages and their taspr IDs
 - PR numbers and status (open, merged, closed)
 - Grouped commits displayed together
@@ -93,6 +95,7 @@ taspr sync --open
 ```
 
 This command:
+
 1. Validates your working tree is clean
 2. Adds `Taspr-Commit-Id` trailers to commits (via interactive rebase)
 3. Pushes each branch to the remote
