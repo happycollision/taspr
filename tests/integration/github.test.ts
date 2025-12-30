@@ -7,21 +7,36 @@ import { rm } from "node:fs/promises";
 // Skip these tests unless explicitly enabled
 const SKIP = !process.env.GITHUB_INTEGRATION_TESTS;
 
-// Helper to run taspr sync in a directory
-async function runSync(
+// Helper to run taspr commands in a directory
+async function runTaspr(
   cwd: string,
-  options: { open?: boolean } = {},
+  command: string,
+  args: string[] = [],
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const args = options.open ? ["sync", "--open"] : ["sync"];
-  const result = await $`bun run ${join(import.meta.dir, "../../src/cli/index.ts")} ${args}`
-    .cwd(cwd)
-    .nothrow()
-    .quiet();
+  const result =
+    await $`bun run ${join(import.meta.dir, "../../src/cli/index.ts")} ${command} ${args}`
+      .cwd(cwd)
+      .nothrow()
+      .quiet();
   return {
     stdout: result.stdout.toString(),
     stderr: result.stderr.toString(),
     exitCode: result.exitCode,
   };
+}
+
+// Helper to run taspr sync in a directory
+async function runSync(
+  cwd: string,
+  options: { open?: boolean } = {},
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const args = options.open ? ["--open"] : [];
+  return runTaspr(cwd, "sync", args);
+}
+
+// Helper to run taspr land in a directory
+async function runLand(cwd: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  return runTaspr(cwd, "land");
 }
 
 describe.skipIf(SKIP)("GitHub Integration", () => {
@@ -263,4 +278,167 @@ describe.skipIf(SKIP)("GitHub Integration: Branch Protection", () => {
     expect(status?.requirePullRequestReviews).toBe(true);
     expect(status?.requiredApprovingReviewCount).toBe(1);
   });
+});
+
+describe.skipIf(SKIP)("GitHub Integration: land", () => {
+  let github: GitHubFixture;
+  let localDir: string | null = null;
+
+  beforeAll(async () => {
+    github = await createGitHubFixture();
+  });
+
+  beforeEach(async () => {
+    await github.reset();
+  });
+
+  afterEach(async () => {
+    await github.reset();
+    if (localDir) {
+      await rm(localDir, { recursive: true, force: true });
+      localDir = null;
+    }
+  });
+
+  test(
+    "lands a single PR and deletes the branch",
+    async () => {
+      // Clone the test repo locally
+      const tmpResult = await $`mktemp -d`.text();
+      localDir = tmpResult.trim();
+
+      await $`git clone ${github.repoUrl}.git ${localDir}`.quiet();
+      await $`git -C ${localDir} config user.email "test@example.com"`.quiet();
+      await $`git -C ${localDir} config user.name "Test User"`.quiet();
+
+      // Create a feature branch with a commit
+      await $`git -C ${localDir} checkout -b feature/land-test`.quiet();
+      await Bun.write(join(localDir, "land-test.txt"), "test content for landing\n");
+      await $`git -C ${localDir} add land-test.txt`.quiet();
+      await $`git -C ${localDir} commit -m "Add file to land"`.quiet();
+
+      // Run taspr sync --open to create the PR
+      const syncResult = await runSync(localDir, { open: true });
+      expect(syncResult.exitCode).toBe(0);
+      expect(syncResult.stdout).toContain("Created");
+
+      // Get the PR number
+      const prList =
+        await $`gh pr list --repo ${github.owner}/${github.repo} --state open --json number,title,headRefName`.text();
+      const prs = JSON.parse(prList) as Array<{
+        number: number;
+        title: string;
+        headRefName: string;
+      }>;
+      const pr = prs.find((p) => p.title.includes("Add file to land"));
+      if (!pr) throw new Error("PR not found");
+      const prNumber = pr.number;
+      const branchName = pr.headRefName;
+
+      // Run taspr land
+      const landResult = await runLand(localDir);
+
+      expect(landResult.exitCode).toBe(0);
+      expect(landResult.stdout).toContain(`Merging PR #${prNumber}`);
+      expect(landResult.stdout).toContain(`✓ Merged PR #${prNumber} to main`);
+      expect(landResult.stdout).toContain(`✓ Deleted remote branch ${branchName}`);
+
+      // Verify PR is now merged (closed)
+      const prStatus =
+        await $`gh pr view ${prNumber} --repo ${github.owner}/${github.repo} --json state`.text();
+      const prData = JSON.parse(prStatus);
+      expect(prData.state).toBe("MERGED");
+
+      // Verify branch was deleted (may need to poll due to eventual consistency)
+      let branchGone = false;
+      for (let i = 0; i < 10; i++) {
+        await Bun.sleep(500);
+        const branchCheck =
+          await $`gh api repos/${github.owner}/${github.repo}/branches/${branchName}`.nothrow();
+        if (branchCheck.exitCode !== 0) {
+          branchGone = true;
+          break;
+        }
+      }
+      expect(branchGone).toBe(true);
+
+      // Verify the commit is now on main
+      await $`git -C ${localDir} fetch origin main`.quiet();
+      const mainLog = await $`git -C ${localDir} log origin/main --oneline -5`.text();
+      expect(mainLog).toContain("Add file to land");
+    },
+    { timeout: 60000 },
+  );
+
+  test(
+    "fails to land when PR cannot be fast-forwarded",
+    async () => {
+      // Clone the test repo locally
+      const tmpResult = await $`mktemp -d`.text();
+      localDir = tmpResult.trim();
+
+      await $`git clone ${github.repoUrl}.git ${localDir}`.quiet();
+      await $`git -C ${localDir} config user.email "test@example.com"`.quiet();
+      await $`git -C ${localDir} config user.name "Test User"`.quiet();
+
+      // Create a feature branch with a commit
+      await $`git -C ${localDir} checkout -b feature/land-conflict-test`.quiet();
+      await Bun.write(join(localDir, "conflict-test.txt"), "feature content\n");
+      await $`git -C ${localDir} add conflict-test.txt`.quiet();
+      await $`git -C ${localDir} commit -m "Add conflicting file"`.quiet();
+
+      // Run taspr sync --open to create the PR
+      const syncResult = await runSync(localDir, { open: true });
+      expect(syncResult.exitCode).toBe(0);
+
+      // Now push a different commit directly to main (simulating someone else merging)
+      await $`git -C ${localDir} checkout main`.quiet();
+      await $`git -C ${localDir} pull origin main`.quiet();
+      await Bun.write(join(localDir, "main-change.txt"), "main change\n");
+      await $`git -C ${localDir} add main-change.txt`.quiet();
+      await $`git -C ${localDir} commit -m "Direct commit to main"`.quiet();
+      await $`git -C ${localDir} push origin main`.quiet();
+
+      // Go back to feature branch
+      await $`git -C ${localDir} checkout feature/land-conflict-test`.quiet();
+
+      // Try to land - should fail because main has diverged
+      const landResult = await runLand(localDir);
+
+      expect(landResult.exitCode).toBe(1);
+      expect(landResult.stderr).toContain("is not ready to land");
+      expect(landResult.stderr).toContain("Rebase may be required");
+    },
+    { timeout: 60000 },
+  );
+
+  test(
+    "reports no open PRs when stack has no PRs",
+    async () => {
+      // Clone the test repo locally
+      const tmpResult = await $`mktemp -d`.text();
+      localDir = tmpResult.trim();
+
+      await $`git clone ${github.repoUrl}.git ${localDir}`.quiet();
+      await $`git -C ${localDir} config user.email "test@example.com"`.quiet();
+      await $`git -C ${localDir} config user.name "Test User"`.quiet();
+
+      // Create a feature branch with a commit but DON'T create a PR
+      await $`git -C ${localDir} checkout -b feature/no-pr-test`.quiet();
+      await Bun.write(join(localDir, "no-pr-test.txt"), "no PR for this\n");
+      await $`git -C ${localDir} add no-pr-test.txt`.quiet();
+      await $`git -C ${localDir} commit -m "Commit without PR"`.quiet();
+
+      // Run sync WITHOUT --open (just adds IDs, no PR)
+      const syncResult = await runSync(localDir, { open: false });
+      expect(syncResult.exitCode).toBe(0);
+
+      // Try to land - should report no open PRs
+      const landResult = await runLand(localDir);
+
+      expect(landResult.exitCode).toBe(0);
+      expect(landResult.stdout).toContain("No open PRs in stack");
+    },
+    { timeout: 60000 },
+  );
 });

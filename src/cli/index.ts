@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { viewCommand } from "./commands/view.ts";
 import { syncCommand } from "./commands/sync.ts";
+import { landCommand } from "./commands/land.ts";
 
 const program = new Command();
 
@@ -15,14 +16,7 @@ program
   .option("--open", "Create PRs for branches that don't have them")
   .action((options) => syncCommand(options));
 
-program
-  .command("land")
-  .description("Merge PRs to main")
-  .argument("[id]", "Specific PR unit ID to land")
-  .option("--all", "Land all mergeable PRs")
-  .action(() => {
-    console.log("land command not yet implemented");
-  });
+program.command("land").description("Merge the bottom ready PR to main").action(landCommand);
 
 program
   .command("group")
