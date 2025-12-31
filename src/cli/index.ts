@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { viewCommand } from "./commands/view.ts";
 import { syncCommand } from "./commands/sync.ts";
 import { landCommand } from "./commands/land.ts";
+import { cleanCommand } from "./commands/clean.ts";
 
 const program = new Command();
 
@@ -21,6 +22,12 @@ program
   .description("Merge the bottom ready PR to main")
   .option("--all", "Merge all consecutive ready PRs from the bottom of the stack")
   .action((options) => landCommand(options));
+
+program
+  .command("clean")
+  .description("Find and remove orphaned branches")
+  .option("--dry-run", "Show what would be cleaned without actually deleting")
+  .action((options) => cleanCommand(options));
 
 program
   .command("group")
