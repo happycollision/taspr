@@ -65,6 +65,24 @@ export interface CheckRollupItem {
 }
 
 /**
+ * Determine review decision from raw GitHub reviewDecision string.
+ * Returns "approved", "changes_requested", "review_required", or "none".
+ * Exported for testing.
+ */
+export function determineReviewDecision(reviewDecision: string | null): ReviewDecision {
+  switch (reviewDecision) {
+    case "APPROVED":
+      return "approved";
+    case "CHANGES_REQUESTED":
+      return "changes_requested";
+    case "REVIEW_REQUIRED":
+      return "review_required";
+    default:
+      return "none";
+  }
+}
+
+/**
  * Determine checks status from raw GitHub statusCheckRollup data.
  * Returns "none" if no checks configured, otherwise "pending", "passing", or "failing".
  * Exported for testing.
@@ -197,6 +215,34 @@ export async function getPRChecksStatus(prNumber: number, repo?: string): Promis
 }
 
 /**
+ * Get the review status for a PR.
+ * Returns the current review decision: "approved", "changes_requested", "review_required", or "none".
+ *
+ * @param prNumber - The PR number to check
+ * @param repo - Optional owner/repo string (e.g., "owner/repo"). If not provided, uses current git context.
+ */
+export async function getPRReviewStatus(prNumber: number, repo?: string): Promise<ReviewDecision> {
+  await ensureGhInstalled();
+
+  const repoArg = repo ? ["--repo", repo] : [];
+  const result = await $`gh pr view ${prNumber} ${repoArg} --json reviewDecision`.quiet().nothrow();
+
+  if (result.exitCode !== 0) {
+    const stderr = result.stderr.toString();
+    if (stderr.includes("not found") || stderr.includes("Could not resolve")) {
+      throw new PRNotFoundError(prNumber);
+    }
+    throw new Error(`Failed to get PR #${prNumber} review status: ${stderr}`);
+  }
+
+  const data = JSON.parse(result.stdout.toString()) as {
+    reviewDecision: string | null;
+  };
+
+  return determineReviewDecision(data.reviewDecision);
+}
+
+/**
  * Get the merge status of a PR (CI checks and review decision).
  */
 export async function getPRMergeStatus(prNumber: number): Promise<PRMergeStatus> {
@@ -213,28 +259,12 @@ export async function getPRMergeStatus(prNumber: number): Promise<PRMergeStatus>
 
   const data = JSON.parse(result.stdout.toString()) as {
     statusCheckRollup: CheckRollupItem[] | null;
-    reviewDecision: string;
+    reviewDecision: string | null;
   };
 
-  // Determine checks status using shared helper
+  // Determine checks status and review decision using shared helpers
   const checksStatus = determineChecksStatus(data.statusCheckRollup);
-
-  // Determine review decision
-  let reviewDecision: ReviewDecision;
-  switch (data.reviewDecision) {
-    case "APPROVED":
-      reviewDecision = "approved";
-      break;
-    case "CHANGES_REQUESTED":
-      reviewDecision = "changes_requested";
-      break;
-    case "REVIEW_REQUIRED":
-      reviewDecision = "review_required";
-      break;
-    default:
-      // Empty string or null means no review required by branch protection
-      reviewDecision = "none";
-  }
+  const reviewDecision = determineReviewDecision(data.reviewDecision);
 
   // PR is ready if checks are passing (or none configured) and reviews are approved (or not required)
   const isReady =

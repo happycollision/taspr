@@ -4,7 +4,7 @@ import { createGitHubFixture, type GitHubFixture } from "../helpers/github-fixtu
 import { join } from "node:path";
 import { rm } from "node:fs/promises";
 import { SKIP_GITHUB_TESTS, SKIP_CI_TESTS, runSync } from "./helpers.ts";
-import { getPRChecksStatus } from "../../src/github/pr.ts";
+import { getPRChecksStatus, getPRReviewStatus } from "../../src/github/pr.ts";
 
 describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR checks status", () => {
   let github: GitHubFixture;
@@ -168,7 +168,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR checks status", () =>
         await $`gh pr create --repo ${github.owner}/${github.repo} --head feature/no-ci-${uniqueId} --title "Remove CI workflow" --body "Testing no CI"`.text();
       const prUrl = prCreateResult.trim();
       const prMatch = prUrl.match(/\/pull\/(\d+)$/);
-      if (!prMatch) throw new Error("Failed to parse PR URL");
+      if (!prMatch?.[1]) throw new Error("Failed to parse PR URL");
       const prNumber = parseInt(prMatch[1], 10);
 
       // Wait a moment for GitHub to process the PR
@@ -179,5 +179,201 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR checks status", () =>
       expect(status).toBe("none");
     },
     { timeout: 120000 },
+  );
+});
+
+describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR review status", () => {
+  let github: GitHubFixture;
+  let localDir: string | null = null;
+
+  beforeAll(async () => {
+    github = await createGitHubFixture();
+  });
+
+  beforeEach(async () => {
+    await github.reset();
+  });
+
+  afterEach(async () => {
+    await github.reset();
+    if (localDir) {
+      await rm(localDir, { recursive: true, force: true });
+      localDir = null;
+    }
+  });
+
+  test(
+    "returns 'none' for PR with no review requirements",
+    async () => {
+      // Clone the test repo locally
+      const tmpResult = await $`mktemp -d`.text();
+      localDir = tmpResult.trim();
+
+      await $`git clone ${github.repoUrl}.git ${localDir}`.quiet();
+      await $`git -C ${localDir} config user.email "test@example.com"`.quiet();
+      await $`git -C ${localDir} config user.name "Test User"`.quiet();
+
+      // Create a feature branch with a commit (remove CI workflow for faster testing)
+      const uniqueId = Date.now().toString(36);
+      await $`git -C ${localDir} checkout -b feature/review-none-${uniqueId}`.quiet();
+      await $`git -C ${localDir} rm .github/workflows/ci.yml`.quiet();
+      await Bun.write(join(localDir, `review-none-${uniqueId}.txt`), "test content\n");
+      await $`git -C ${localDir} add .`.quiet();
+      await $`git -C ${localDir} commit -m "Add file for review test"`.quiet();
+
+      // Push and create PR
+      await $`git -C ${localDir} push origin feature/review-none-${uniqueId}`.quiet();
+      const prCreateResult =
+        await $`gh pr create --repo ${github.owner}/${github.repo} --head feature/review-none-${uniqueId} --title "Test PR for review status" --body "Testing review status"`.text();
+      const prUrl = prCreateResult.trim();
+      const prMatch = prUrl.match(/\/pull\/(\d+)$/);
+      if (!prMatch?.[1]) throw new Error("Failed to parse PR URL");
+      const prNumber = parseInt(prMatch[1], 10);
+
+      // Wait a moment for GitHub to process the PR
+      await Bun.sleep(2000);
+
+      // Check the review status - should be "none" since no review requirements are set
+      const status = await getPRReviewStatus(prNumber, `${github.owner}/${github.repo}`);
+      expect(status).toBe("none");
+    },
+    { timeout: 60000 },
+  );
+
+  // Note: This test is skipped because GitHub doesn't allow you to approve your own PR.
+  // The getPRReviewStatus function is still tested via unit tests for determineReviewDecision.
+  // To manually test this, create a PR and have another user approve it.
+  test.skip(
+    "returns 'approved' after PR is approved",
+    async () => {
+      // Clone the test repo locally
+      const tmpResult = await $`mktemp -d`.text();
+      localDir = tmpResult.trim();
+
+      await $`git clone ${github.repoUrl}.git ${localDir}`.quiet();
+      await $`git -C ${localDir} config user.email "test@example.com"`.quiet();
+      await $`git -C ${localDir} config user.name "Test User"`.quiet();
+
+      // Create a feature branch with a commit (remove CI workflow for faster testing)
+      const uniqueId = Date.now().toString(36);
+      await $`git -C ${localDir} checkout -b feature/review-approved-${uniqueId}`.quiet();
+      await $`git -C ${localDir} rm .github/workflows/ci.yml`.quiet();
+      await Bun.write(join(localDir, `review-approved-${uniqueId}.txt`), "test content\n");
+      await $`git -C ${localDir} add .`.quiet();
+      await $`git -C ${localDir} commit -m "Add file for approval test"`.quiet();
+
+      // Push and create PR
+      await $`git -C ${localDir} push origin feature/review-approved-${uniqueId}`.quiet();
+      const prCreateResult =
+        await $`gh pr create --repo ${github.owner}/${github.repo} --head feature/review-approved-${uniqueId} --title "Test PR for approval" --body "Testing approval"`.text();
+      const prUrl = prCreateResult.trim();
+      const prMatch = prUrl.match(/\/pull\/(\d+)$/);
+      if (!prMatch?.[1]) throw new Error("Failed to parse PR URL");
+      const prNumber = parseInt(prMatch[1], 10);
+
+      // Approve the PR using gh
+      await $`gh pr review ${prNumber} --repo ${github.owner}/${github.repo} --approve --body "LGTM"`.quiet();
+
+      // Wait a moment for GitHub to process the review
+      await Bun.sleep(2000);
+
+      // Check the review status - should be "approved"
+      const status = await getPRReviewStatus(prNumber, `${github.owner}/${github.repo}`);
+      expect(status).toBe("approved");
+    },
+    { timeout: 60000 },
+  );
+
+  // Note: This test is skipped because GitHub doesn't allow you to request changes on your own PR.
+  // The getPRReviewStatus function is still tested via unit tests for determineReviewDecision.
+  // To manually test this, create a PR and have another user request changes.
+  test.skip(
+    "returns 'changes_requested' after changes are requested",
+    async () => {
+      // Clone the test repo locally
+      const tmpResult = await $`mktemp -d`.text();
+      localDir = tmpResult.trim();
+
+      await $`git clone ${github.repoUrl}.git ${localDir}`.quiet();
+      await $`git -C ${localDir} config user.email "test@example.com"`.quiet();
+      await $`git -C ${localDir} config user.name "Test User"`.quiet();
+
+      // Create a feature branch with a commit (remove CI workflow for faster testing)
+      const uniqueId = Date.now().toString(36);
+      await $`git -C ${localDir} checkout -b feature/review-changes-${uniqueId}`.quiet();
+      await $`git -C ${localDir} rm .github/workflows/ci.yml`.quiet();
+      await Bun.write(join(localDir, `review-changes-${uniqueId}.txt`), "test content\n");
+      await $`git -C ${localDir} add .`.quiet();
+      await $`git -C ${localDir} commit -m "Add file for changes requested test"`.quiet();
+
+      // Push and create PR
+      await $`git -C ${localDir} push origin feature/review-changes-${uniqueId}`.quiet();
+      const prCreateResult =
+        await $`gh pr create --repo ${github.owner}/${github.repo} --head feature/review-changes-${uniqueId} --title "Test PR for changes requested" --body "Testing changes requested"`.text();
+      const prUrl = prCreateResult.trim();
+      const prMatch = prUrl.match(/\/pull\/(\d+)$/);
+      if (!prMatch?.[1]) throw new Error("Failed to parse PR URL");
+      const prNumber = parseInt(prMatch[1], 10);
+
+      // Request changes on the PR using gh
+      await $`gh pr review ${prNumber} --repo ${github.owner}/${github.repo} --request-changes --body "Please fix this"`.quiet();
+
+      // Wait a moment for GitHub to process the review
+      await Bun.sleep(2000);
+
+      // Check the review status - should be "changes_requested"
+      const status = await getPRReviewStatus(prNumber, `${github.owner}/${github.repo}`);
+      expect(status).toBe("changes_requested");
+    },
+    { timeout: 60000 },
+  );
+
+  test(
+    "returns 'review_required' when branch protection requires reviews",
+    async () => {
+      // Clone the test repo locally
+      const tmpResult = await $`mktemp -d`.text();
+      localDir = tmpResult.trim();
+
+      await $`git clone ${github.repoUrl}.git ${localDir}`.quiet();
+      await $`git -C ${localDir} config user.email "test@example.com"`.quiet();
+      await $`git -C ${localDir} config user.name "Test User"`.quiet();
+
+      // Enable branch protection requiring reviews
+      await github.enableBranchProtection("main", {
+        requirePullRequestReviews: true,
+        requiredApprovingReviewCount: 1,
+      });
+
+      try {
+        // Create a feature branch with a commit (remove CI workflow for faster testing)
+        const uniqueId = Date.now().toString(36);
+        await $`git -C ${localDir} checkout -b feature/review-required-${uniqueId}`.quiet();
+        await $`git -C ${localDir} rm .github/workflows/ci.yml`.quiet();
+        await Bun.write(join(localDir, `review-required-${uniqueId}.txt`), "test content\n");
+        await $`git -C ${localDir} add .`.quiet();
+        await $`git -C ${localDir} commit -m "Add file for review required test"`.quiet();
+
+        // Push and create PR
+        await $`git -C ${localDir} push origin feature/review-required-${uniqueId}`.quiet();
+        const prCreateResult =
+          await $`gh pr create --repo ${github.owner}/${github.repo} --head feature/review-required-${uniqueId} --title "Test PR for review required" --body "Testing review required"`.text();
+        const prUrl = prCreateResult.trim();
+        const prMatch = prUrl.match(/\/pull\/(\d+)$/);
+        if (!prMatch?.[1]) throw new Error("Failed to parse PR URL");
+        const prNumber = parseInt(prMatch[1], 10);
+
+        // Wait a moment for GitHub to process the PR
+        await Bun.sleep(2000);
+
+        // Check the review status - should be "review_required" since branch protection requires it
+        const status = await getPRReviewStatus(prNumber, `${github.owner}/${github.repo}`);
+        expect(status).toBe("review_required");
+      } finally {
+        // Always disable branch protection
+        await github.disableBranchProtection("main");
+      }
+    },
+    { timeout: 60000 },
   );
 });

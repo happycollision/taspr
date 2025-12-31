@@ -4,6 +4,7 @@ import {
   PRNotFoundError,
   PRNotReadyError,
   determineChecksStatus,
+  determineReviewDecision,
   type CheckRollupItem,
 } from "./pr.ts";
 
@@ -97,6 +98,32 @@ describe("github/pr", () => {
       expect(error.prNumber).toBe(789);
       expect(error.reasons).toEqual(["CI checks are failing", "Review is required"]);
       expect(error.name).toBe("PRNotReadyError");
+    });
+  });
+
+  describe("determineReviewDecision", () => {
+    test("returns 'approved' for APPROVED", () => {
+      expect(determineReviewDecision("APPROVED")).toBe("approved");
+    });
+
+    test("returns 'changes_requested' for CHANGES_REQUESTED", () => {
+      expect(determineReviewDecision("CHANGES_REQUESTED")).toBe("changes_requested");
+    });
+
+    test("returns 'review_required' for REVIEW_REQUIRED", () => {
+      expect(determineReviewDecision("REVIEW_REQUIRED")).toBe("review_required");
+    });
+
+    test("returns 'none' for null", () => {
+      expect(determineReviewDecision(null)).toBe("none");
+    });
+
+    test("returns 'none' for empty string", () => {
+      expect(determineReviewDecision("")).toBe("none");
+    });
+
+    test("returns 'none' for unknown value", () => {
+      expect(determineReviewDecision("UNKNOWN")).toBe("none");
     });
   });
 });
