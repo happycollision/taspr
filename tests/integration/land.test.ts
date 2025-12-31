@@ -100,6 +100,104 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: land", () => {
   );
 
   test.skipIf(SKIP_CI_TESTS)(
+    "retargets next PR to main after landing, preventing it from being closed",
+    async () => {
+      // This test verifies that when we land a PR, the next PR in the stack
+      // is retargeted to main so it doesn't get closed when its base branch is deleted.
+      const tmpResult = await $`mktemp -d`.text();
+      localDir = tmpResult.trim();
+
+      await $`git clone ${github.repoUrl}.git ${localDir}`.quiet();
+      await $`git -C ${localDir} config user.email "test@example.com"`.quiet();
+      await $`git -C ${localDir} config user.name "Test User"`.quiet();
+
+      // Create a feature branch with 3 commits (stacked PRs)
+      const uniqueId = Date.now().toString(36);
+      await $`git -C ${localDir} checkout -b feature/retarget-test-${uniqueId}`.quiet();
+
+      // First commit
+      await Bun.write(join(localDir, `retarget-1-${uniqueId}.txt`), "first commit\n");
+      await $`git -C ${localDir} add .`.quiet();
+      await $`git -C ${localDir} commit -m "First commit for retarget test"`.quiet();
+
+      // Second commit
+      await Bun.write(join(localDir, `retarget-2-${uniqueId}.txt`), "second commit\n");
+      await $`git -C ${localDir} add .`.quiet();
+      await $`git -C ${localDir} commit -m "Second commit for retarget test"`.quiet();
+
+      // Third commit
+      await Bun.write(join(localDir, `retarget-3-${uniqueId}.txt`), "third commit\n");
+      await $`git -C ${localDir} add .`.quiet();
+      await $`git -C ${localDir} commit -m "Third commit for retarget test"`.quiet();
+
+      // Run taspr sync --open to create PRs for all commits
+      const syncResult = await runSync(localDir, { open: true });
+      expect(syncResult.exitCode).toBe(0);
+
+      // Get all PRs
+      const prList =
+        await $`gh pr list --repo ${github.owner}/${github.repo} --state open --json number,title`.text();
+      const prs = JSON.parse(prList) as Array<{ number: number; title: string }>;
+      const firstPr = prs.find((p) => p.title.includes("First commit for retarget test"));
+      const secondPr = prs.find((p) => p.title.includes("Second commit for retarget test"));
+      const thirdPr = prs.find((p) => p.title.includes("Third commit for retarget test"));
+      if (!firstPr || !secondPr || !thirdPr) throw new Error("PRs not found");
+
+      // Wait for CI to pass on all PRs
+      await Promise.all([
+        github.waitForCI(firstPr.number, { timeout: 180000 }),
+        github.waitForCI(secondPr.number, { timeout: 180000 }),
+        github.waitForCI(thirdPr.number, { timeout: 180000 }),
+      ]);
+
+      // Step 1: Run taspr land (lands just the first PR)
+      const landResult1 = await runLand(localDir);
+      expect(landResult1.exitCode).toBe(0);
+      expect(landResult1.stdout).toContain(`✓ Merged PR #${firstPr.number} to main`);
+      expect(landResult1.stdout).toContain(`Retargeting PR #${secondPr.number} to main`);
+
+      // Wait a few seconds for GitHub to process
+      await Bun.sleep(5000);
+
+      // Verify first PR is MERGED (not just closed)
+      const firstStatus =
+        await $`gh pr view ${firstPr.number} --repo ${github.owner}/${github.repo} --json state`.text();
+      expect(JSON.parse(firstStatus).state).toBe("MERGED");
+
+      // Verify second PR is still OPEN (not closed due to base branch deletion)
+      const secondStatus =
+        await $`gh pr view ${secondPr.number} --repo ${github.owner}/${github.repo} --json state,baseRefName`.text();
+      const secondData = JSON.parse(secondStatus);
+      expect(secondData.state).toBe("OPEN");
+      expect(secondData.baseRefName).toBe("main"); // Should have been retargeted
+
+      // Verify third PR is still OPEN
+      const thirdStatus =
+        await $`gh pr view ${thirdPr.number} --repo ${github.owner}/${github.repo} --json state`.text();
+      expect(JSON.parse(thirdStatus).state).toBe("OPEN");
+
+      // Step 2: Run taspr land --all (should land remaining PRs)
+      const landResult2 = await runLand(localDir, { all: true });
+      expect(landResult2.exitCode).toBe(0);
+      expect(landResult2.stdout).toContain("✓ Merged 2 PR(s)");
+
+      // Verify all PRs are MERGED (not CLOSED)
+      const finalFirstStatus =
+        await $`gh pr view ${firstPr.number} --repo ${github.owner}/${github.repo} --json state`.text();
+      expect(JSON.parse(finalFirstStatus).state).toBe("MERGED");
+
+      const finalSecondStatus =
+        await $`gh pr view ${secondPr.number} --repo ${github.owner}/${github.repo} --json state`.text();
+      expect(JSON.parse(finalSecondStatus).state).toBe("MERGED");
+
+      const finalThirdStatus =
+        await $`gh pr view ${thirdPr.number} --repo ${github.owner}/${github.repo} --json state`.text();
+      expect(JSON.parse(finalThirdStatus).state).toBe("MERGED");
+    },
+    { timeout: 400000 },
+  );
+
+  test.skipIf(SKIP_CI_TESTS)(
     "fails to land when PR cannot be fast-forwarded",
     async () => {
       // Clone the test repo locally
@@ -481,25 +579,37 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: land --all", () => {
       await $`git -C ${localDir} config user.email "test@example.com"`.quiet();
       await $`git -C ${localDir} config user.name "Test User"`.quiet();
 
-      // Create commits but don't wait for CI - PRs won't be ready
+      // Create a commit with [CI_SLOW_TEST] marker - CI will take 30+ seconds
+      // This gives us time to run land --all while CI is still pending
       const uniqueId = Date.now().toString(36);
       await $`git -C ${localDir} checkout -b feature/not-ready-${uniqueId}`.quiet();
 
       await Bun.write(join(localDir, `not-ready-${uniqueId}.txt`), "pending CI\n");
       await $`git -C ${localDir} add .`.quiet();
-      await $`git -C ${localDir} commit -m "Commit with pending CI"`.quiet();
+      await $`git -C ${localDir} commit -m "[CI_SLOW_TEST] Commit with slow CI"`.quiet();
 
       // Run taspr sync --open
       const syncResult = await runSync(localDir, { open: true });
       expect(syncResult.exitCode).toBe(0);
 
-      // Run land --all immediately (CI won't have finished)
+      // Get PR number
+      const prList =
+        await $`gh pr list --repo ${github.owner}/${github.repo} --state open --json number,title`.text();
+      const prs = JSON.parse(prList) as Array<{ number: number; title: string }>;
+      const pr = prs.find((p) => p.title.includes("CI_SLOW_TEST"));
+      if (!pr) throw new Error("PR not found");
+
+      // Wait for CI to start (so we know checks are being reported)
+      await github.waitForCIToStart(pr.number);
+
+      // Run land --all (CI should still be running due to slow marker)
       const landResult = await runLand(localDir, { all: true });
 
-      // Should fail because first PR is not ready
+      // Should fail because first PR is not ready (CI still pending)
       expect(landResult.exitCode).toBe(1);
       expect(landResult.stderr).toContain("is not ready to land");
+      expect(landResult.stderr).toContain("CI checks are still running");
     },
-    { timeout: 60000 },
+    { timeout: 120000 },
   );
 });
