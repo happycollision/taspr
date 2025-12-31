@@ -13,11 +13,18 @@ export interface PRUnit {
   commits: string[];
 }
 
+export interface PRStatus {
+  checks: "pending" | "passing" | "failing" | "none";
+  review: "approved" | "changes_requested" | "review_required" | "none";
+  comments: { total: number; resolved: number };
+}
+
 export interface EnrichedPRUnit extends PRUnit {
   pr?: {
     number: number;
     url: string;
     state: "OPEN" | "CLOSED" | "MERGED";
+    status?: PRStatus;
   };
 }
 

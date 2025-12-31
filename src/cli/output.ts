@@ -1,7 +1,36 @@
-import type { EnrichedPRUnit, StackParseResult } from "../types.ts";
+import type { EnrichedPRUnit, PRStatus, StackParseResult } from "../types.ts";
 import { getTasprConfig } from "../git/config.ts";
 
 const SEPARATOR = "─".repeat(72);
+
+/**
+ * Format blocking indicators for a PR's status.
+ * Shows unresolved comments, CI check status, and review status.
+ */
+export function formatBlockingIndicators(status: PRStatus): string {
+  const indicators: string[] = [];
+
+  // Comment threads - show if any unresolved
+  if (status.comments.total > 0 && status.comments.resolved < status.comments.total) {
+    indicators.push(`💬 ${status.comments.resolved}/${status.comments.total}`);
+  }
+
+  // CI checks
+  if (status.checks === "pending") {
+    indicators.push("⏳ checks");
+  } else if (status.checks === "failing") {
+    indicators.push("❌ checks");
+  }
+
+  // Review status
+  if (status.review === "review_required") {
+    indicators.push("👀 review");
+  } else if (status.review === "changes_requested") {
+    indicators.push("❌ review");
+  }
+
+  return indicators.join("  ");
+}
 
 /**
  * Get status icon based on PR state.
@@ -77,18 +106,22 @@ function hasCommitId(unit: EnrichedPRUnit): boolean {
 function formatPRUnit(unit: EnrichedPRUnit): string {
   const lines: string[] = [];
 
-  const status = getPRStatusIcon(unit.pr);
+  const statusIcon = getPRStatusIcon(unit.pr);
   const prNum = unit.pr ? `#${unit.pr.number} ` : "";
+
+  // Get blocking indicators if PR has status
+  const indicators = unit.pr?.status ? formatBlockingIndicators(unit.pr.status) : "";
+  const indicatorSuffix = indicators ? `  ${indicators}` : "";
 
   if (unit.type === "single") {
     // Single commit
-    lines.push(`  ${status} ${prNum}${unit.title}`);
+    lines.push(`  ${statusIcon} ${prNum}${unit.title}${indicatorSuffix}`);
     const idDisplay = hasCommitId(unit) ? unit.id : "(no commit ID yet)";
     lines.push(`    └─ ${idDisplay}`);
   } else {
     // Group
     const groupIdDisplay = hasCommitId(unit) ? `[${unit.id}]` : "(no commit ID yet)";
-    lines.push(`  ${status} ${prNum}${unit.title} ${groupIdDisplay}`);
+    lines.push(`  ${statusIcon} ${prNum}${unit.title} ${groupIdDisplay}${indicatorSuffix}`);
 
     // List commits with tree structure
     const commitCount = unit.commits.length;

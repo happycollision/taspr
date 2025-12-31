@@ -2,8 +2,23 @@ import { getStackCommitsWithTrailers, getCurrentBranch } from "../../git/command
 import { parseStack } from "../../core/stack.ts";
 import { formatStackView, formatValidationError } from "../output.ts";
 import { getBranchNameConfig, getBranchName } from "../../github/branches.ts";
-import { findPRByBranch } from "../../github/pr.ts";
-import type { PRUnit, EnrichedPRUnit } from "../../types.ts";
+import {
+  findPRByBranch,
+  getPRChecksStatus,
+  getPRReviewStatus,
+  getPRCommentStatus,
+} from "../../github/pr.ts";
+import type { PRUnit, EnrichedPRUnit, PRStatus } from "../../types.ts";
+
+async function fetchPRStatus(prNumber: number): Promise<PRStatus> {
+  const [checks, review, comments] = await Promise.all([
+    getPRChecksStatus(prNumber),
+    getPRReviewStatus(prNumber),
+    getPRCommentStatus(prNumber),
+  ]);
+
+  return { checks, review, comments };
+}
 
 async function enrichUnitsWithPRInfo(units: PRUnit[]): Promise<EnrichedPRUnit[]> {
   const config = await getBranchNameConfig();
@@ -14,12 +29,16 @@ async function enrichUnitsWithPRInfo(units: PRUnit[]): Promise<EnrichedPRUnit[]>
       const pr = await findPRByBranch(branchName);
 
       if (pr) {
+        // Only fetch status for open PRs
+        const status = pr.state === "OPEN" ? await fetchPRStatus(pr.number) : undefined;
+
         return {
           ...unit,
           pr: {
             number: pr.number,
             url: pr.url,
             state: pr.state,
+            status,
           },
         };
       }
