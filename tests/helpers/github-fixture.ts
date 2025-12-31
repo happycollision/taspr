@@ -64,6 +64,9 @@ export interface GitHubFixture {
   /** Wait for CI to complete on a PR */
   waitForCI(prNumber: number, opts?: { timeout?: number }): Promise<CIStatus>;
 
+  /** Wait for CI to start reporting (at least one check queued) */
+  waitForCIToStart(prNumber: number, opts?: { timeout?: number }): Promise<void>;
+
   /** Get current CI status for a PR */
   getCIStatus(prNumber: number): Promise<CIStatus>;
 }
@@ -304,6 +307,22 @@ export async function createGitHubFixture(): Promise<GitHubFixture> {
     throw new Error(`CI timed out after ${timeout}ms for PR #${prNumber}`);
   }
 
+  async function waitForCIToStart(prNumber: number, opts?: { timeout?: number }): Promise<void> {
+    const timeout = opts?.timeout || 30000; // 30 seconds default
+    const pollInterval = 2000; // 2 seconds
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < timeout) {
+      const status = await getCIStatus(prNumber);
+      if (status.checks.length > 0) {
+        return; // CI has started
+      }
+      await Bun.sleep(pollInterval);
+    }
+
+    throw new Error(`CI did not start within ${timeout}ms for PR #${prNumber}`);
+  }
+
   return {
     owner,
     repo,
@@ -315,6 +334,7 @@ export async function createGitHubFixture(): Promise<GitHubFixture> {
     disableBranchProtection,
     getBranchProtection,
     waitForCI,
+    waitForCIToStart,
     getCIStatus,
   };
 }

@@ -290,6 +290,22 @@ export async function getPRBaseBranch(prNumber: number): Promise<string> {
 }
 
 /**
+ * Retarget a PR to a new base branch.
+ * Used when landing stacked PRs to update dependent PRs.
+ */
+export async function retargetPR(prNumber: number, newBase: string): Promise<void> {
+  await ensureGhInstalled();
+
+  const result = await $`gh pr edit ${prNumber} --base ${newBase}`.quiet().nothrow();
+
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `Failed to retarget PR #${prNumber} to ${newBase}: ${result.stderr.toString()}`,
+    );
+  }
+}
+
+/**
  * Get the current state of a PR.
  */
 export async function getPRState(prNumber: number): Promise<"OPEN" | "CLOSED" | "MERGED"> {

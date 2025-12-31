@@ -8,6 +8,7 @@ import {
   deleteRemoteBranch,
   getPRMergeStatus,
   getPRBaseBranch,
+  retargetPR,
   waitForPRState,
   PRNotFastForwardError,
   PRNotFoundError,
@@ -19,8 +20,6 @@ import type { PRMergeStatus } from "../../github/pr.ts";
 export interface LandCommandOptions {
   all?: boolean;
 }
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function getNotReadyReasons(status: PRMergeStatus): string[] {
   const reasons: string[] = [];
@@ -64,36 +63,14 @@ async function enrichUnitsWithPRInfo(units: PRUnit[]): Promise<EnrichedPRUnit[]>
 type EnrichedUnitWithPR = EnrichedPRUnit & { pr: NonNullable<EnrichedPRUnit["pr"]> };
 
 /**
- * Wait for GitHub to retarget a PR to main branch after its parent is merged.
- * GitHub automatically retargets PRs when their base branch is deleted.
- */
-async function waitForPRRetarget(
-  prNumber: number,
-  targetBranch: string,
-  maxWaitMs: number = 30000,
-  pollIntervalMs: number = 2000,
-): Promise<boolean> {
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < maxWaitMs) {
-    const baseBranch = await getPRBaseBranch(prNumber);
-    if (baseBranch === targetBranch) {
-      return true;
-    }
-    await sleep(pollIntervalMs);
-  }
-
-  return false;
-}
-
-/**
- * Land a single PR: merge, verify merged state on GitHub, and delete branch.
+ * Land a single PR: merge and verify merged state on GitHub.
  * Caller is responsible for checking readiness beforehand.
+ * Returns the branch name for later cleanup.
  */
 async function landSinglePR(
   unit: EnrichedUnitWithPR,
   config: Awaited<ReturnType<typeof getBranchNameConfig>>,
-): Promise<void> {
+): Promise<string> {
   console.log(`Merging PR #${unit.pr.number} (${unit.title})...`);
 
   await landPR(unit.pr.number);
@@ -106,10 +83,7 @@ async function landSinglePR(
 
   console.log(`✓ Merged PR #${unit.pr.number} to main`);
 
-  // Clean up the remote branch
-  const branchName = getBranchName(unit.id, config);
-  await deleteRemoteBranch(branchName);
-  console.log(`✓ Deleted remote branch ${branchName}`);
+  return getBranchName(unit.id, config);
 }
 
 export async function landCommand(options: LandCommandOptions = {}): Promise<void> {
@@ -151,12 +125,17 @@ export async function landCommand(options: LandCommandOptions = {}): Promise<voi
 
     if (options.all) {
       // Land all consecutive ready PRs (based on snapshot)
-      let merged = 0;
+      // We defer branch deletion until all PRs are merged so GitHub can auto-retarget
+      const mergedBranches: string[] = [];
 
-      for (const unit of openPRs) {
+      for (let i = 0; i < openPRs.length; i++) {
+        const unit = openPRs[i];
+        if (!unit) continue;
+        const nextUnit = openPRs[i + 1];
         const status = mergeStatusMap.get(unit.pr.number);
+
         if (!status?.isReady) {
-          if (merged > 0) {
+          if (mergedBranches.length > 0) {
             console.log(`Stopping at PR #${unit.pr.number} (not ready)`);
           } else {
             const reasons = status ? getNotReadyReasons(status) : ["Unknown status"];
@@ -165,28 +144,41 @@ export async function landCommand(options: LandCommandOptions = {}): Promise<voi
           break;
         }
 
-        // After first merge, wait for GitHub to retarget PR to main
-        if (merged > 0) {
-          process.stdout.write(`Waiting for PR #${unit.pr.number} to retarget to main...`);
-          const retargeted = await waitForPRRetarget(unit.pr.number, "main");
-          if (!retargeted) {
-            console.log(" timed out");
-            console.log(`\nStopping: PR #${unit.pr.number} was not retargeted to main in time`);
-            break;
+        // Before merging, retarget this PR to main if needed (after first merge)
+        if (mergedBranches.length > 0) {
+          const currentBase = await getPRBaseBranch(unit.pr.number);
+          if (currentBase !== "main") {
+            console.log(`Retargeting PR #${unit.pr.number} to main...`);
+            await retargetPR(unit.pr.number, "main");
           }
-          console.log(" done");
         }
 
-        await landSinglePR(unit, config);
+        // Before merging, also retarget the NEXT PR to main (so it doesn't get closed when we delete this branch)
+        if (nextUnit) {
+          const nextBase = await getPRBaseBranch(nextUnit.pr.number);
+          if (nextBase !== "main") {
+            console.log(`Retargeting PR #${nextUnit.pr.number} to main...`);
+            await retargetPR(nextUnit.pr.number, "main");
+          }
+        }
 
-        merged++;
+        const branchName = await landSinglePR(unit, config);
+        mergedBranches.push(branchName);
+
         console.log(""); // Blank line between PRs
       }
 
-      if (merged === 0) {
-        console.log("No ready PRs to merge");
+      // Clean up all merged branches at the end
+      if (mergedBranches.length > 0) {
+        console.log("Cleaning up merged branches...");
+        for (const branchName of mergedBranches) {
+          await deleteRemoteBranch(branchName);
+          console.log(`✓ Deleted remote branch ${branchName}`);
+        }
+        console.log("");
+        console.log(`✓ Merged ${mergedBranches.length} PR(s)`);
       } else {
-        console.log(`✓ Merged ${merged} PR(s)`);
+        console.log("No ready PRs to merge");
       }
     } else {
       // Land single bottom PR
@@ -202,7 +194,10 @@ export async function landCommand(options: LandCommandOptions = {}): Promise<voi
         throw new PRNotReadyError(bottomPR.pr.number, reasons);
       }
 
-      await landSinglePR(bottomPR, config);
+      // Land the PR, then delete the branch
+      const branchName = await landSinglePR(bottomPR, config);
+      await deleteRemoteBranch(branchName);
+      console.log(`✓ Deleted remote branch ${branchName}`);
     }
   } catch (error) {
     if (error instanceof PRNotFastForwardError) {

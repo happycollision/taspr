@@ -481,25 +481,37 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: land --all", () => {
       await $`git -C ${localDir} config user.email "test@example.com"`.quiet();
       await $`git -C ${localDir} config user.name "Test User"`.quiet();
 
-      // Create commits but don't wait for CI - PRs won't be ready
+      // Create a commit with [CI_SLOW_TEST] marker - CI will take 30+ seconds
+      // This gives us time to run land --all while CI is still pending
       const uniqueId = Date.now().toString(36);
       await $`git -C ${localDir} checkout -b feature/not-ready-${uniqueId}`.quiet();
 
       await Bun.write(join(localDir, `not-ready-${uniqueId}.txt`), "pending CI\n");
       await $`git -C ${localDir} add .`.quiet();
-      await $`git -C ${localDir} commit -m "Commit with pending CI"`.quiet();
+      await $`git -C ${localDir} commit -m "[CI_SLOW_TEST] Commit with slow CI"`.quiet();
 
       // Run taspr sync --open
       const syncResult = await runSync(localDir, { open: true });
       expect(syncResult.exitCode).toBe(0);
 
-      // Run land --all immediately (CI won't have finished)
+      // Get PR number
+      const prList =
+        await $`gh pr list --repo ${github.owner}/${github.repo} --state open --json number,title`.text();
+      const prs = JSON.parse(prList) as Array<{ number: number; title: string }>;
+      const pr = prs.find((p) => p.title.includes("CI_SLOW_TEST"));
+      if (!pr) throw new Error("PR not found");
+
+      // Wait for CI to start (so we know checks are being reported)
+      await github.waitForCIToStart(pr.number);
+
+      // Run land --all (CI should still be running due to slow marker)
       const landResult = await runLand(localDir, { all: true });
 
-      // Should fail because first PR is not ready
+      // Should fail because first PR is not ready (CI still pending)
       expect(landResult.exitCode).toBe(1);
       expect(landResult.stderr).toContain("is not ready to land");
+      expect(landResult.stderr).toContain("CI checks are still running");
     },
-    { timeout: 60000 },
+    { timeout: 120000 },
   );
 });
