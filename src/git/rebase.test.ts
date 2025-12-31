@@ -1,7 +1,7 @@
 import { test, expect, afterEach, describe } from "bun:test";
 import { $ } from "bun";
 import { join } from "node:path";
-import { createGitFixture, type GitFixture } from "../../tests/helpers/git-fixture.ts";
+import { fixtureManager } from "../../tests/helpers/git-fixture.ts";
 import {
   injectMissingIds,
   allCommitsHaveIds,
@@ -12,19 +12,13 @@ import {
 } from "./rebase.ts";
 import { getStackCommitsWithTrailers } from "./commands.ts";
 
-let fixture: GitFixture | null = null;
-
-afterEach(async () => {
-  if (fixture) {
-    await fixture.cleanup();
-    fixture = null;
-  }
-});
+const fixtures = fixtureManager();
+afterEach(() => fixtures.cleanup());
 
 describe("git/rebase", () => {
   describe("injectMissingIds", () => {
     test("adds IDs to commits that don't have them", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-no-ids", { create: true });
 
       // Create commits without IDs
@@ -51,7 +45,7 @@ describe("git/rebase", () => {
     });
 
     test("preserves existing IDs", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-mixed", { create: true });
 
       // Create commits - one with ID, one without
@@ -70,7 +64,7 @@ describe("git/rebase", () => {
     });
 
     test("no-op when all commits have IDs", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-all-ids", { create: true });
 
       await fixture.commit("Has ID 1", { trailers: { "Taspr-Commit-Id": "id111111" } });
@@ -88,7 +82,7 @@ describe("git/rebase", () => {
     });
 
     test("no-op when stack is empty", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       // No commits beyond merge-base
 
       const result = await injectMissingIds({ cwd: fixture.path });
@@ -100,7 +94,7 @@ describe("git/rebase", () => {
 
   describe("allCommitsHaveIds", () => {
     test("returns true when all commits have IDs", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-check-all", { create: true });
 
       await fixture.commit("Commit 1", { trailers: { "Taspr-Commit-Id": "id111111" } });
@@ -111,7 +105,7 @@ describe("git/rebase", () => {
     });
 
     test("returns false when some commits missing IDs", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-check-some", { create: true });
 
       await fixture.commit("Has ID", { trailers: { "Taspr-Commit-Id": "id111111" } });
@@ -122,7 +116,7 @@ describe("git/rebase", () => {
     });
 
     test("returns true for empty stack", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
 
       const result = await allCommitsHaveIds({ cwd: fixture.path });
       expect(result).toBe(true);
@@ -131,7 +125,7 @@ describe("git/rebase", () => {
 
   describe("countCommitsMissingIds", () => {
     test("counts commits without IDs", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-count", { create: true });
 
       await fixture.commit("Has ID", { trailers: { "Taspr-Commit-Id": "id111111" } });
@@ -143,7 +137,7 @@ describe("git/rebase", () => {
     });
 
     test("returns 0 when all have IDs", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-count-all", { create: true });
 
       await fixture.commit("Has ID", { trailers: { "Taspr-Commit-Id": "id111111" } });
@@ -155,23 +149,13 @@ describe("git/rebase", () => {
 
   describe("rebaseOntoMain", () => {
     test("successfully rebases stack onto updated main", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-rebase", { create: true });
       await fixture.commit("Feature commit 1", { trailers: { "Taspr-Commit-Id": "feat0001" } });
       await fixture.commit("Feature commit 2", { trailers: { "Taspr-Commit-Id": "feat0002" } });
 
-      // Push commits to origin/main (simulating other developer's work)
-      const tempWorktree = `${fixture.originPath}-worktree`;
-      await $`git clone ${fixture.originPath} ${tempWorktree}`.quiet();
-      await $`git -C ${tempWorktree} config user.email "other@example.com"`.quiet();
-      await $`git -C ${tempWorktree} config user.name "Other User"`.quiet();
-      await Bun.write(join(tempWorktree, "main-update.txt"), "Main content\n");
-      await $`git -C ${tempWorktree} add .`.quiet();
-      await $`git -C ${tempWorktree} commit -m "Update on main"`.quiet();
-      await $`git -C ${tempWorktree} push origin main`.quiet();
-      await $`rm -rf ${tempWorktree}`.quiet();
-
-      // Fetch to get the new main
+      // Update origin/main (simulating other developer's work)
+      await fixture.updateOriginMain("Update on main");
       await $`git -C ${fixture.path} fetch origin`.quiet();
 
       // Rebase onto main
@@ -183,21 +167,12 @@ describe("git/rebase", () => {
     });
 
     test("preserves Taspr trailers through rebase", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-trailers", { create: true });
       await fixture.commit("Feature commit", { trailers: { "Taspr-Commit-Id": "preserve1" } });
 
-      // Push commit to origin/main
-      const tempWorktree = `${fixture.originPath}-worktree`;
-      await $`git clone ${fixture.originPath} ${tempWorktree}`.quiet();
-      await $`git -C ${tempWorktree} config user.email "other@example.com"`.quiet();
-      await $`git -C ${tempWorktree} config user.name "Other User"`.quiet();
-      await Bun.write(join(tempWorktree, "main-file.txt"), "Main content\n");
-      await $`git -C ${tempWorktree} add .`.quiet();
-      await $`git -C ${tempWorktree} commit -m "Main commit"`.quiet();
-      await $`git -C ${tempWorktree} push origin main`.quiet();
-      await $`rm -rf ${tempWorktree}`.quiet();
-
+      // Update origin/main
+      await fixture.updateOriginMain("Main commit");
       await $`git -C ${fixture.path} fetch origin`.quiet();
 
       const result = await rebaseOntoMain({ cwd: fixture.path });
@@ -210,7 +185,7 @@ describe("git/rebase", () => {
     });
 
     test("detects conflict and returns conflict file", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
 
       // Create a file that will conflict
       const conflictFile = "conflict.txt";
@@ -226,16 +201,7 @@ describe("git/rebase", () => {
       await $`git -C ${fixture.path} commit -m "Feature change"`.quiet();
 
       // Update main with conflicting change
-      const tempWorktree = `${fixture.originPath}-worktree`;
-      await $`git clone ${fixture.originPath} ${tempWorktree}`.quiet();
-      await $`git -C ${tempWorktree} config user.email "other@example.com"`.quiet();
-      await $`git -C ${tempWorktree} config user.name "Other User"`.quiet();
-      await Bun.write(join(tempWorktree, conflictFile), "Main content\n");
-      await $`git -C ${tempWorktree} add .`.quiet();
-      await $`git -C ${tempWorktree} commit -m "Main change"`.quiet();
-      await $`git -C ${tempWorktree} push origin main`.quiet();
-      await $`rm -rf ${tempWorktree}`.quiet();
-
+      await fixture.updateOriginMain("Main change", { [conflictFile]: "Main content\n" });
       await $`git -C ${fixture.path} fetch origin`.quiet();
 
       // Rebase should detect conflict
@@ -249,7 +215,7 @@ describe("git/rebase", () => {
     });
 
     test("no-op when already up to date", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-uptodate", { create: true });
       await fixture.commit("Feature commit", { trailers: { "Taspr-Commit-Id": "uptodate1" } });
 
@@ -265,7 +231,7 @@ describe("git/rebase", () => {
 
   describe("getConflictInfo", () => {
     test("returns null when not in a rebase", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-no-rebase", { create: true });
       await fixture.commit("Normal commit");
 
@@ -274,7 +240,7 @@ describe("git/rebase", () => {
     });
 
     test("returns conflict info during rebase conflict", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
 
       // Create a file that will conflict
       const conflictFile = "conflict-info.txt";
@@ -290,16 +256,7 @@ describe("git/rebase", () => {
       await $`git -C ${fixture.path} commit -m "Feature modification"`.quiet();
 
       // Update main with conflicting change
-      const tempWorktree = `${fixture.originPath}-worktree`;
-      await $`git clone ${fixture.originPath} ${tempWorktree}`.quiet();
-      await $`git -C ${tempWorktree} config user.email "other@example.com"`.quiet();
-      await $`git -C ${tempWorktree} config user.name "Other User"`.quiet();
-      await Bun.write(join(tempWorktree, conflictFile), "Main content\n");
-      await $`git -C ${tempWorktree} add .`.quiet();
-      await $`git -C ${tempWorktree} commit -m "Main modification"`.quiet();
-      await $`git -C ${tempWorktree} push origin main`.quiet();
-      await $`rm -rf ${tempWorktree}`.quiet();
-
+      await fixture.updateOriginMain("Main modification", { [conflictFile]: "Main content\n" });
       await $`git -C ${fixture.path} fetch origin`.quiet();
 
       // Start rebase that will conflict
@@ -318,7 +275,7 @@ describe("git/rebase", () => {
     });
 
     test("lists multiple conflicting files", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
 
       // Create files that will conflict
       await Bun.write(join(fixture.path, "file1.txt"), "Original 1\n");
@@ -335,17 +292,10 @@ describe("git/rebase", () => {
       await $`git -C ${fixture.path} commit -m "Modify both files"`.quiet();
 
       // Update main with conflicting changes
-      const tempWorktree = `${fixture.originPath}-worktree`;
-      await $`git clone ${fixture.originPath} ${tempWorktree}`.quiet();
-      await $`git -C ${tempWorktree} config user.email "other@example.com"`.quiet();
-      await $`git -C ${tempWorktree} config user.name "Other User"`.quiet();
-      await Bun.write(join(tempWorktree, "file1.txt"), "Main 1\n");
-      await Bun.write(join(tempWorktree, "file2.txt"), "Main 2\n");
-      await $`git -C ${tempWorktree} add .`.quiet();
-      await $`git -C ${tempWorktree} commit -m "Main changes"`.quiet();
-      await $`git -C ${tempWorktree} push origin main`.quiet();
-      await $`rm -rf ${tempWorktree}`.quiet();
-
+      await fixture.updateOriginMain("Main changes", {
+        "file1.txt": "Main 1\n",
+        "file2.txt": "Main 2\n",
+      });
       await $`git -C ${fixture.path} fetch origin`.quiet();
       await $`git -C ${fixture.path} rebase origin/main`.quiet().nothrow();
 

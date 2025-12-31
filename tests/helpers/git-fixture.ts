@@ -8,10 +8,41 @@ export interface GitFixture {
   originPath: string;
   commit(message: string, options?: { trailers?: Record<string, string> }): Promise<string>;
   checkout(branch: string, options?: { create?: boolean }): Promise<void>;
+  /** Update origin/main with a new commit (simulates another developer's work) */
+  updateOriginMain(message: string, files?: Record<string, string>): Promise<void>;
   cleanup(): Promise<void>;
 }
 
-export async function createGitFixture(): Promise<GitFixture> {
+/**
+ * Helper to manage fixture cleanup in afterEach hooks.
+ * Usage:
+ *   const fixtures = fixtureManager();
+ *   afterEach(() => fixtures.cleanup());
+ *
+ *   test("...", async () => {
+ *     const fixture = await fixtures.create();
+ *     // test code
+ *   });
+ */
+export function fixtureManager() {
+  const activeFixtures: GitFixture[] = [];
+
+  return {
+    async create(): Promise<GitFixture> {
+      const fixture = await createGitFixture();
+      activeFixtures.push(fixture);
+      return fixture;
+    },
+    async cleanup(): Promise<void> {
+      for (const fixture of activeFixtures) {
+        await fixture.cleanup();
+      }
+      activeFixtures.length = 0;
+    },
+  };
+}
+
+async function createGitFixture(): Promise<GitFixture> {
   // Create the "origin" bare repository first
   const originPath = await mkdtemp(join(tmpdir(), "taspr-test-origin-"));
   await $`git init --bare ${originPath}`.quiet();
@@ -69,5 +100,34 @@ export async function createGitFixture(): Promise<GitFixture> {
     await rm(originPath, { recursive: true, force: true });
   }
 
-  return { path, originPath, commit, checkout, cleanup };
+  /**
+   * Update origin/main with a new commit (simulates another developer's work).
+   * Uses a temporary worktree clone to avoid affecting the local repo state.
+   */
+  async function updateOriginMain(message: string, files?: Record<string, string>): Promise<void> {
+    const tempWorktree = `${originPath}-worktree-${Date.now()}`;
+    try {
+      await $`git clone ${originPath} ${tempWorktree}`.quiet();
+      await $`git -C ${tempWorktree} config user.email "other@example.com"`.quiet();
+      await $`git -C ${tempWorktree} config user.name "Other User"`.quiet();
+
+      // Write files or create a default one
+      if (files) {
+        for (const [filename, content] of Object.entries(files)) {
+          await Bun.write(join(tempWorktree, filename), content);
+        }
+      } else {
+        const filename = `main-update-${Date.now()}.txt`;
+        await Bun.write(join(tempWorktree, filename), `Update: ${message}\n`);
+      }
+
+      await $`git -C ${tempWorktree} add .`.quiet();
+      await $`git -C ${tempWorktree} commit -m ${message}`.quiet();
+      await $`git -C ${tempWorktree} push origin main`.quiet();
+    } finally {
+      await rm(tempWorktree, { recursive: true, force: true });
+    }
+  }
+
+  return { path, originPath, commit, checkout, updateOriginMain, cleanup };
 }

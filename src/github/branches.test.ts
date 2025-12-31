@@ -1,16 +1,10 @@
 import { describe, test, expect, afterEach } from "bun:test";
 import { $ } from "bun";
-import { createGitFixture, type GitFixture } from "../../tests/helpers/git-fixture.ts";
+import { fixtureManager } from "../../tests/helpers/git-fixture.ts";
 import { getBranchName, pushBranch, type BranchNameConfig } from "./branches.ts";
 
-let fixture: GitFixture | null = null;
-
-afterEach(async () => {
-  if (fixture) {
-    await fixture.cleanup();
-    fixture = null;
-  }
-});
+const fixtures = fixtureManager();
+afterEach(() => fixtures.cleanup());
 
 describe("github/branches", () => {
   describe("getBranchName", () => {
@@ -27,7 +21,7 @@ describe("github/branches", () => {
 
   describe("pushBranch", () => {
     test("pushes a commit to a new branch", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-push-test", { create: true });
 
       const commitHash = await fixture.commit("Test commit");
@@ -42,7 +36,7 @@ describe("github/branches", () => {
     });
 
     test("updates an existing branch", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-update-test", { create: true });
 
       const firstCommit = await fixture.commit("First commit");
@@ -58,7 +52,7 @@ describe("github/branches", () => {
     });
 
     test("force push overwrites divergent history", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-force-test", { create: true });
 
       const commit1 = await fixture.commit("Commit 1");

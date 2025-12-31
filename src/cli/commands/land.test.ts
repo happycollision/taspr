@@ -1,33 +1,13 @@
 import { test, expect, afterEach, describe } from "bun:test";
-import { $ } from "bun";
-import { createGitFixture, type GitFixture } from "../../../tests/helpers/git-fixture.ts";
-import { join } from "node:path";
+import { fixtureManager } from "../../../tests/helpers/git-fixture.ts";
+import { runLand } from "../../../tests/integration/helpers.ts";
 
-let fixture: GitFixture | null = null;
-
-afterEach(async () => {
-  if (fixture) {
-    await fixture.cleanup();
-    fixture = null;
-  }
-});
-
-// Helper to run taspr land in the fixture directory
-async function runLand(cwd: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const result = await $`bun run ${join(import.meta.dir, "../index.ts")} land`
-    .cwd(cwd)
-    .nothrow()
-    .quiet();
-  return {
-    stdout: result.stdout.toString(),
-    stderr: result.stderr.toString(),
-    exitCode: result.exitCode,
-  };
-}
+const fixtures = fixtureManager();
+afterEach(() => fixtures.cleanup());
 
 describe("cli/commands/land", () => {
   test("reports when stack is empty", async () => {
-    fixture = await createGitFixture();
+    const fixture = await fixtures.create();
     // No commits beyond merge-base
 
     const result = await runLand(fixture.path);
@@ -37,7 +17,7 @@ describe("cli/commands/land", () => {
   });
 
   test("reports when there are commits but no open PRs", async () => {
-    fixture = await createGitFixture();
+    const fixture = await fixtures.create();
     await fixture.checkout("feature-no-prs", { create: true });
 
     // Create commits with IDs (so they're valid PR units)
@@ -51,7 +31,7 @@ describe("cli/commands/land", () => {
   });
 
   test("handles validation error for unclosed group", async () => {
-    fixture = await createGitFixture();
+    const fixture = await fixtures.create();
     await fixture.checkout("feature-unclosed", { create: true });
 
     // Create a group start without a corresponding end

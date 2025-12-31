@@ -1,38 +1,16 @@
 import { test, expect, afterEach, describe } from "bun:test";
 import { $ } from "bun";
-import { createGitFixture, type GitFixture } from "../../../tests/helpers/git-fixture.ts";
+import { fixtureManager } from "../../../tests/helpers/git-fixture.ts";
+import { runSync } from "../../../tests/integration/helpers.ts";
 import { getStackCommitsWithTrailers } from "../../git/commands.ts";
 import { join } from "node:path";
 
-let fixture: GitFixture | null = null;
-
-afterEach(async () => {
-  if (fixture) {
-    await fixture.cleanup();
-    fixture = null;
-  }
-});
-
-// Helper to run taspr sync in the fixture directory
-async function runSync(
-  cwd: string,
-  options: { open?: boolean } = {},
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const args = options.open ? ["sync", "--open"] : ["sync"];
-  const result = await $`bun run ${join(import.meta.dir, "../index.ts")} ${args}`
-    .cwd(cwd)
-    .nothrow()
-    .quiet();
-  return {
-    stdout: result.stdout.toString(),
-    stderr: result.stderr.toString(),
-    exitCode: result.exitCode,
-  };
-}
+const fixtures = fixtureManager();
+afterEach(() => fixtures.cleanup());
 
 describe("cli/commands/sync", () => {
   test("adds IDs to commits that don't have them", async () => {
-    fixture = await createGitFixture();
+    const fixture = await fixtures.create();
     await fixture.checkout("feature-sync-test", { create: true });
 
     await fixture.commit("First commit");
@@ -52,7 +30,7 @@ describe("cli/commands/sync", () => {
   });
 
   test("reports when all commits already have IDs", async () => {
-    fixture = await createGitFixture();
+    const fixture = await fixtures.create();
     await fixture.checkout("feature-has-ids", { create: true });
 
     await fixture.commit("Has ID", { trailers: { "Taspr-Commit-Id": "id111111" } });
@@ -64,7 +42,7 @@ describe("cli/commands/sync", () => {
   });
 
   test("reports when stack is empty", async () => {
-    fixture = await createGitFixture();
+    const fixture = await fixtures.create();
     // No commits beyond merge-base
 
     const result = await runSync(fixture.path);
@@ -74,7 +52,7 @@ describe("cli/commands/sync", () => {
   });
 
   test("blocks on dirty working tree with staged changes", async () => {
-    fixture = await createGitFixture();
+    const fixture = await fixtures.create();
     await fixture.checkout("feature-dirty", { create: true });
     await fixture.commit("A commit");
 
@@ -90,7 +68,7 @@ describe("cli/commands/sync", () => {
   });
 
   test("blocks on dirty working tree with unstaged changes", async () => {
-    fixture = await createGitFixture();
+    const fixture = await fixtures.create();
     await fixture.checkout("feature-unstaged", { create: true });
     await fixture.commit("A commit");
 
@@ -105,7 +83,7 @@ describe("cli/commands/sync", () => {
   });
 
   test("output is clean with no extraneous noise", async () => {
-    fixture = await createGitFixture();
+    const fixture = await fixtures.create();
     await fixture.checkout("feature-clean-output", { create: true });
 
     await fixture.commit("Test commit for clean output");
@@ -145,7 +123,7 @@ describe("cli/commands/sync", () => {
   });
 
   test("blocks when mid-rebase conflict is detected", async () => {
-    fixture = await createGitFixture();
+    const fixture = await fixtures.create();
 
     // Create a file that will conflict
     const conflictFile = "conflict.txt";
@@ -160,16 +138,8 @@ describe("cli/commands/sync", () => {
     await $`git -C ${fixture.path} add .`.quiet();
     await $`git -C ${fixture.path} commit -m "Feature change"`.quiet();
 
-    // Update main with conflicting change via worktree
-    const tempWorktree = `${fixture.originPath}-worktree`;
-    await $`git clone ${fixture.originPath} ${tempWorktree}`.quiet();
-    await $`git -C ${tempWorktree} config user.email "other@example.com"`.quiet();
-    await $`git -C ${tempWorktree} config user.name "Other User"`.quiet();
-    await Bun.write(join(tempWorktree, conflictFile), "Main content\n");
-    await $`git -C ${tempWorktree} add .`.quiet();
-    await $`git -C ${tempWorktree} commit -m "Main change"`.quiet();
-    await $`git -C ${tempWorktree} push origin main`.quiet();
-    await $`rm -rf ${tempWorktree}`.quiet();
+    // Update main with conflicting change
+    await fixture.updateOriginMain("Main change", { [conflictFile]: "Main content\n" });
 
     // Fetch and attempt rebase (will conflict)
     await $`git -C ${fixture.path} fetch origin`.quiet();
@@ -189,7 +159,7 @@ describe("cli/commands/sync", () => {
   });
 
   test("updates branches after user completes rebase", async () => {
-    fixture = await createGitFixture();
+    const fixture = await fixtures.create();
 
     // Create initial feature branch with a commit that has an ID
     await fixture.checkout("feature-rebase-sync", { create: true });
@@ -203,16 +173,8 @@ describe("cli/commands/sync", () => {
     // Get the initial commit hash on remote
     const initialHash = (await $`git -C ${fixture.path} rev-parse HEAD`.text()).trim();
 
-    // Update main with a new commit via worktree (simulating another developer's work)
-    const tempWorktree = `${fixture.originPath}-worktree`;
-    await $`git clone ${fixture.originPath} ${tempWorktree}`.quiet();
-    await $`git -C ${tempWorktree} config user.email "other@example.com"`.quiet();
-    await $`git -C ${tempWorktree} config user.name "Other User"`.quiet();
-    await Bun.write(join(tempWorktree, "main-update.txt"), "New main content\n");
-    await $`git -C ${tempWorktree} add .`.quiet();
-    await $`git -C ${tempWorktree} commit -m "Update on main"`.quiet();
-    await $`git -C ${tempWorktree} push origin main`.quiet();
-    await $`rm -rf ${tempWorktree}`.quiet();
+    // Update main with a new commit (simulating another developer's work)
+    await fixture.updateOriginMain("Update on main");
 
     // Fetch and rebase onto new main (no conflicts)
     await $`git -C ${fixture.path} fetch origin`.quiet();

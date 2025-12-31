@@ -1,9 +1,9 @@
 import { test, expect, afterEach, describe, beforeEach } from "bun:test";
 import { $ } from "bun";
-import { createGitFixture, type GitFixture } from "../../tests/helpers/git-fixture.ts";
+import { fixtureManager } from "../../tests/helpers/git-fixture.ts";
 import { getTasprConfig, detectDefaultBranch, getDefaultBranchRef } from "./config.ts";
 
-let fixture: GitFixture | null = null;
+const fixtures = fixtureManager();
 let originalCwd: string;
 
 beforeEach(() => {
@@ -12,16 +12,13 @@ beforeEach(() => {
 
 afterEach(async () => {
   process.chdir(originalCwd);
-  if (fixture) {
-    await fixture.cleanup();
-    fixture = null;
-  }
+  await fixtures.cleanup();
 });
 
 describe("git/config", () => {
   describe("getTasprConfig", () => {
     test("returns default values when no config is set", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       process.chdir(fixture.path);
 
       const config = await getTasprConfig();
@@ -31,7 +28,7 @@ describe("git/config", () => {
     });
 
     test("reads custom branchPrefix from git config", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       process.chdir(fixture.path);
 
       await $`git config taspr.branchPrefix jaspr`.quiet();
@@ -42,7 +39,7 @@ describe("git/config", () => {
     });
 
     test("reads custom defaultBranch from git config", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       process.chdir(fixture.path);
 
       await $`git config taspr.defaultBranch develop`.quiet();
@@ -53,7 +50,7 @@ describe("git/config", () => {
     });
 
     test("caches config for subsequent calls", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       process.chdir(fixture.path);
 
       const config1 = await getTasprConfig();
@@ -68,7 +65,7 @@ describe("git/config", () => {
 
   describe("detectDefaultBranch", () => {
     test("detects main branch from origin", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       process.chdir(fixture.path);
 
       const branch = await detectDefaultBranch();
@@ -77,7 +74,7 @@ describe("git/config", () => {
     });
 
     test("detects master branch when main does not exist", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       process.chdir(fixture.path);
 
       // Rename main to master
@@ -92,7 +89,7 @@ describe("git/config", () => {
     });
 
     test("throws error when no default branch can be detected", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       process.chdir(fixture.path);
 
       // Remove origin remote
@@ -104,7 +101,7 @@ describe("git/config", () => {
 
   describe("getDefaultBranchRef", () => {
     test("returns origin/main by default", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       process.chdir(fixture.path);
 
       const ref = await getDefaultBranchRef();
@@ -113,7 +110,7 @@ describe("git/config", () => {
     });
 
     test("returns custom default branch ref when configured", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       process.chdir(fixture.path);
 
       await $`git config taspr.defaultBranch develop`.quiet();

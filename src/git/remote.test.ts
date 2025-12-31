@@ -1,6 +1,6 @@
 import { describe, test, expect, afterEach } from "bun:test";
 import { $ } from "bun";
-import { createGitFixture, type GitFixture } from "../../tests/helpers/git-fixture.ts";
+import { fixtureManager } from "../../tests/helpers/git-fixture.ts";
 import {
   getRemoteBranchCommit,
   getSyncStatus,
@@ -11,21 +11,15 @@ import {
 import { pushBranch, type BranchNameConfig } from "../github/branches.ts";
 import type { PRUnit } from "../types.ts";
 
-let fixture: GitFixture | null = null;
-
-afterEach(async () => {
-  if (fixture) {
-    await fixture.cleanup();
-    fixture = null;
-  }
-});
+const fixtures = fixtureManager();
+afterEach(() => fixtures.cleanup());
 
 const testConfig: BranchNameConfig = { prefix: "taspr", username: "testuser" };
 
 describe("git/remote", () => {
   describe("getRemoteBranchCommit", () => {
     test("returns null for non-existent branch", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
 
       const result = await getRemoteBranchCommit("nonexistent/branch", { cwd: fixture.path });
 
@@ -33,7 +27,7 @@ describe("git/remote", () => {
     });
 
     test("returns commit hash for existing branch", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-test", { create: true });
 
       const commitHash = await fixture.commit("Test commit");
@@ -50,7 +44,7 @@ describe("git/remote", () => {
 
   describe("getSyncStatus", () => {
     test("returns needsCreate=true for new branch", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-new", { create: true });
 
       const commitHash = await fixture.commit("New commit");
@@ -73,7 +67,7 @@ describe("git/remote", () => {
     });
 
     test("returns needsUpdate=true when local differs from remote", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-update", { create: true });
 
       const firstCommit = await fixture.commit("First commit");
@@ -103,7 +97,7 @@ describe("git/remote", () => {
     });
 
     test("returns both false when already in sync", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-sync", { create: true });
 
       const commitHash = await fixture.commit("Synced commit");
@@ -132,7 +126,7 @@ describe("git/remote", () => {
 
   describe("getAllSyncStatuses", () => {
     test("returns statuses for all units", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-multi", { create: true });
 
       const commit1 = await fixture.commit("Commit 1");

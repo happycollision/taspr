@@ -1,15 +1,9 @@
 import { test, expect, afterEach, describe } from "bun:test";
-import { createGitFixture, type GitFixture } from "../../tests/helpers/git-fixture.ts";
+import { fixtureManager } from "../../tests/helpers/git-fixture.ts";
 import { parseTrailers, getCommitTrailers, addTrailers } from "./trailers.ts";
 
-let fixture: GitFixture | null = null;
-
-afterEach(async () => {
-  if (fixture) {
-    await fixture.cleanup();
-    fixture = null;
-  }
-});
+const fixtures = fixtureManager();
+afterEach(() => fixtures.cleanup());
 
 describe("git/trailers", () => {
   describe("parseTrailers", () => {
@@ -116,7 +110,7 @@ Taspr-Group-End: f7e8d9c0`;
 
   describe("getCommitTrailers", () => {
     test("returns trailers from a commit", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-trailers", { create: true });
 
       const hash = await fixture.commit("Add feature", {
@@ -132,7 +126,7 @@ Taspr-Group-End: f7e8d9c0`;
     });
 
     test("returns empty object for commit without trailers", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-no-trailers", { create: true });
 
       const hash = await fixture.commit("Plain commit");
@@ -142,7 +136,7 @@ Taspr-Group-End: f7e8d9c0`;
     });
 
     test("handles commit with only non-taspr trailers", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await fixture.checkout("feature-other-trailers", { create: true });
 
       const hash = await fixture.commit("Collaborative commit", {

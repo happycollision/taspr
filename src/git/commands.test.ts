@@ -1,6 +1,6 @@
 import { test, expect, afterEach, describe } from "bun:test";
 import { $ } from "bun";
-import { createGitFixture, type GitFixture } from "../../tests/helpers/git-fixture.ts";
+import { fixtureManager } from "../../tests/helpers/git-fixture.ts";
 import {
   getStackCommits,
   getMergeBase,
@@ -9,19 +9,13 @@ import {
 } from "./commands.ts";
 import { join } from "node:path";
 
-let fixture: GitFixture | null = null;
-
-afterEach(async () => {
-  if (fixture) {
-    await fixture.cleanup();
-    fixture = null;
-  }
-});
+const fixtures = fixtureManager();
+afterEach(() => fixtures.cleanup());
 
 describe("git/commands", () => {
   describe("getMergeBase", () => {
     test("returns merge-base with origin/main", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
 
       const mergeBase = await getMergeBase({ cwd: fixture.path });
       expect(mergeBase).toMatch(/^[a-f0-9]{40}$/);
@@ -30,7 +24,7 @@ describe("git/commands", () => {
 
   describe("getCurrentBranch", () => {
     test("returns current branch name", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
 
       const branch = await getCurrentBranch({ cwd: fixture.path });
       expect(branch).toBe("main");
@@ -39,14 +33,14 @@ describe("git/commands", () => {
 
   describe("getStackCommits", () => {
     test("returns empty array when no commits ahead of main", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
 
       const commits = await getStackCommits({ cwd: fixture.path });
       expect(commits).toEqual([]);
     });
 
     test("returns commits in oldest-to-newest order", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
 
       await fixture.checkout("feature-test", { create: true });
       await fixture.commit("First commit");
@@ -68,7 +62,7 @@ describe("git/commands", () => {
     });
 
     test("correctly parses commit body with trailers", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
 
       await fixture.checkout("feature-body-test", { create: true });
       await fixture.commit("Add feature X", {
@@ -87,7 +81,7 @@ describe("git/commands", () => {
     });
 
     test("handles commits with special characters in subject", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
 
       await fixture.checkout("feature-special-chars", { create: true });
 
@@ -106,14 +100,14 @@ describe("git/commands", () => {
 
   describe("hasUncommittedChanges", () => {
     test("returns false when working tree is clean", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
 
       const hasChanges = await hasUncommittedChanges({ cwd: fixture.path });
       expect(hasChanges).toBe(false);
     });
 
     test("returns true when there are uncommitted changes", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
 
       await Bun.write(join(fixture.path, "uncommitted.ts"), "// uncommitted");
 

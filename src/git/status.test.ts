@@ -1,25 +1,19 @@
 import { test, expect, afterEach, describe, setDefaultTimeout } from "bun:test";
 import { $ } from "bun";
-import { createGitFixture, type GitFixture } from "../../tests/helpers/git-fixture.ts";
+import { fixtureManager } from "../../tests/helpers/git-fixture.ts";
 import { getWorkingTreeStatus, requireCleanWorkingTree, DirtyWorkingTreeError } from "./status.ts";
 import { join } from "node:path";
 
 // Git operations can be slow under load, increase default timeout
 setDefaultTimeout(15_000);
 
-let fixture: GitFixture | null = null;
-
-afterEach(async () => {
-  if (fixture) {
-    await fixture.cleanup();
-    fixture = null;
-  }
-});
+const fixtures = fixtureManager();
+afterEach(() => fixtures.cleanup());
 
 describe("git/status", () => {
   describe("getWorkingTreeStatus", () => {
     test("clean working tree", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
 
       const status = await getWorkingTreeStatus({ cwd: fixture.path });
 
@@ -30,7 +24,7 @@ describe("git/status", () => {
     });
 
     test("detects untracked files", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await Bun.write(join(fixture.path, "untracked.ts"), "// untracked");
 
       const status = await getWorkingTreeStatus({ cwd: fixture.path });
@@ -42,7 +36,7 @@ describe("git/status", () => {
     });
 
     test("detects staged changes", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await Bun.write(join(fixture.path, "staged.ts"), "// staged");
       await $`git -C ${fixture.path} add staged.ts`.quiet();
 
@@ -55,7 +49,7 @@ describe("git/status", () => {
     });
 
     test("detects unstaged changes to tracked file", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       // Modify existing tracked file
       await Bun.write(join(fixture.path, "README.md"), "# Modified");
 
@@ -68,7 +62,7 @@ describe("git/status", () => {
     });
 
     test("detects both staged and unstaged changes", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       // Stage a new file
       await Bun.write(join(fixture.path, "staged.ts"), "// staged");
       await $`git -C ${fixture.path} add staged.ts`.quiet();
@@ -85,14 +79,14 @@ describe("git/status", () => {
 
   describe("requireCleanWorkingTree", () => {
     test("passes with clean working tree", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
 
       // Should not throw
       await requireCleanWorkingTree({ cwd: fixture.path });
     });
 
     test("passes with only untracked files", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await Bun.write(join(fixture.path, "untracked.ts"), "// untracked");
 
       // Should not throw - untracked files don't affect rebase
@@ -100,7 +94,7 @@ describe("git/status", () => {
     });
 
     test("throws DirtyWorkingTreeError with staged changes", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await Bun.write(join(fixture.path, "staged.ts"), "// staged");
       await $`git -C ${fixture.path} add staged.ts`.quiet();
 
@@ -113,7 +107,7 @@ describe("git/status", () => {
     });
 
     test("throws DirtyWorkingTreeError with unstaged changes", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await Bun.write(join(fixture.path, "README.md"), "# Modified");
 
       try {
@@ -125,7 +119,7 @@ describe("git/status", () => {
     });
 
     test("error message describes the problem", async () => {
-      fixture = await createGitFixture();
+      const fixture = await fixtures.create();
       await Bun.write(join(fixture.path, "staged.ts"), "// staged");
       await $`git -C ${fixture.path} add staged.ts`.quiet();
       await Bun.write(join(fixture.path, "README.md"), "# Modified");

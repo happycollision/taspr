@@ -1,5 +1,7 @@
 import { $ } from "bun";
 import { join } from "node:path";
+import { rm } from "node:fs/promises";
+import type { GitHubFixture } from "../helpers/github-fixture.ts";
 
 // Skip these tests unless explicitly enabled
 export const SKIP_GITHUB_TESTS = !process.env.GITHUB_INTEGRATION_TESTS;
@@ -7,12 +9,19 @@ export const SKIP_GITHUB_TESTS = !process.env.GITHUB_INTEGRATION_TESTS;
 // Skip CI-dependent tests unless explicitly enabled
 export const SKIP_CI_TESTS = !process.env.GITHUB_CI_TESTS;
 
+/** Standard result from running a taspr command */
+export interface TasprResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
 // Helper to run taspr commands in a directory
 export async function runTaspr(
   cwd: string,
   command: string,
   args: string[] = [],
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+): Promise<TasprResult> {
   const result =
     await $`bun run ${join(import.meta.dir, "../../src/cli/index.ts")} ${command} ${args}`
       .cwd(cwd)
@@ -26,19 +35,13 @@ export async function runTaspr(
 }
 
 // Helper to run taspr sync in a directory
-export async function runSync(
-  cwd: string,
-  options: { open?: boolean } = {},
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+export async function runSync(cwd: string, options: { open?: boolean } = {}): Promise<TasprResult> {
   const args = options.open ? ["--open"] : [];
   return runTaspr(cwd, "sync", args);
 }
 
 // Helper to run taspr land in a directory
-export async function runLand(
-  cwd: string,
-  options: { all?: boolean } = {},
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+export async function runLand(cwd: string, options: { all?: boolean } = {}): Promise<TasprResult> {
   const args = options.all ? ["--all"] : [];
   return runTaspr(cwd, "land", args);
 }
@@ -47,9 +50,139 @@ export async function runLand(
 export async function runClean(
   cwd: string,
   options: { dryRun?: boolean; force?: boolean } = {},
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+): Promise<TasprResult> {
   const args: string[] = [];
   if (options.dryRun) args.push("--dry-run");
   if (options.force) args.push("--force");
   return runTaspr(cwd, "clean", args);
+}
+
+// Helper to run taspr view in a directory
+export async function runView(cwd: string, options: { all?: boolean } = {}): Promise<TasprResult> {
+  const args = options.all ? ["--all"] : [];
+  return runTaspr(cwd, "view", args);
+}
+
+/**
+ * Manages a local clone of a GitHub test repository for integration tests.
+ * Handles setup and cleanup automatically.
+ */
+export interface LocalClone {
+  /** Path to the local clone directory */
+  path: string;
+  /** Create a feature branch with optional commits */
+  createFeatureBranch(
+    name: string,
+    commits: Array<{ message: string; files?: Record<string, string> }>,
+  ): Promise<void>;
+  /** Find a PR by title substring */
+  findPR(titleSubstring: string): Promise<{ number: number; title: string; headRefName: string }>;
+  /** Wait for remote branch deletion with polling (handles GitHub eventual consistency) */
+  waitForBranchDeletion(branchName: string, options?: { timeout?: number }): Promise<boolean>;
+  /** Clean up the local clone */
+  cleanup(): Promise<void>;
+}
+
+/**
+ * Create a local clone of a GitHub test repository.
+ */
+export async function createLocalClone(github: GitHubFixture): Promise<LocalClone> {
+  const tmpResult = await $`mktemp -d`.text();
+  const path = tmpResult.trim();
+
+  await $`git clone ${github.repoUrl}.git ${path}`.quiet();
+  await $`git -C ${path} config user.email "test@example.com"`.quiet();
+  await $`git -C ${path} config user.name "Test User"`.quiet();
+
+  async function createFeatureBranch(
+    name: string,
+    commits: Array<{ message: string; files?: Record<string, string> }>,
+  ): Promise<void> {
+    const uniqueId = Date.now().toString(36);
+    const branchName = `feature/${name}-${uniqueId}`;
+    await $`git -C ${path} checkout -b ${branchName}`.quiet();
+
+    for (const commit of commits) {
+      if (commit.files) {
+        for (const [filename, content] of Object.entries(commit.files)) {
+          await Bun.write(join(path, filename), content);
+        }
+      } else {
+        // Create a unique file by default
+        const filename = `${name}-${uniqueId}-${Date.now()}.txt`;
+        await Bun.write(join(path, filename), `Content for: ${commit.message}\n`);
+      }
+      await $`git -C ${path} add .`.quiet();
+      await $`git -C ${path} commit -m ${commit.message}`.quiet();
+    }
+  }
+
+  async function findPR(
+    titleSubstring: string,
+  ): Promise<{ number: number; title: string; headRefName: string }> {
+    const prList =
+      await $`gh pr list --repo ${github.owner}/${github.repo} --state open --json number,title,headRefName`.text();
+    const prs = JSON.parse(prList) as Array<{
+      number: number;
+      title: string;
+      headRefName: string;
+    }>;
+    const pr = prs.find((p) => p.title.includes(titleSubstring));
+    if (!pr) throw new Error(`PR not found with title containing: ${titleSubstring}`);
+    return pr;
+  }
+
+  async function waitForBranchDeletion(
+    branchName: string,
+    options?: { timeout?: number },
+  ): Promise<boolean> {
+    const timeout = options?.timeout ?? 5000;
+    const pollInterval = 500;
+    const maxAttempts = Math.ceil(timeout / pollInterval);
+
+    for (let i = 0; i < maxAttempts; i++) {
+      await Bun.sleep(pollInterval);
+      const check =
+        await $`gh api repos/${github.owner}/${github.repo}/branches/${branchName}`.nothrow();
+      if (check.exitCode !== 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async function cleanup(): Promise<void> {
+    await rm(path, { recursive: true, force: true });
+  }
+
+  return { path, createFeatureBranch, findPR, waitForBranchDeletion, cleanup };
+}
+
+/**
+ * Manages multiple local clones with automatic cleanup.
+ * Usage:
+ *   const clones = localCloneManager();
+ *   afterEach(() => clones.cleanup());
+ *
+ *   test("...", async () => {
+ *     const clone = await clones.create(github);
+ *     // test code
+ *   });
+ */
+export function localCloneManager() {
+  const activeClones: LocalClone[] = [];
+
+  return {
+    async create(github: GitHubFixture): Promise<LocalClone> {
+      const clone = await createLocalClone(github);
+      activeClones.push(clone);
+      return clone;
+    },
+    async cleanup(): Promise<void> {
+      for (const clone of activeClones) {
+        await clone.cleanup();
+      }
+      activeClones.length = 0;
+    },
+  };
 }
