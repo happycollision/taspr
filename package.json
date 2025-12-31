@@ -11,7 +11,7 @@
     "build": "bun build src/cli/index.ts --compile --outfile dist/taspr",
     "test": "bun test",
     "test:github:setup": "bun run scripts/setup-taspr-check.ts",
-    "test:github": "GITHUB_INTEGRATION_TESTS=1 bun test tests/integration/",
+    "test:github": "GITHUB_INTEGRATION_TESTS=1 GITHUB_CI_TESTS=1 bun test tests/integration/",
     "lint": "oxlint --type-aware",
     "types": "tsc --noEmit",
     "format": "oxfmt",
