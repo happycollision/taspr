@@ -131,7 +131,9 @@ export async function getPRMergeStatus(prNumber: number): Promise<PRMergeStatus>
   await ensureGhInstalled();
 
   // Get PR status checks and review decision
-  const result = await $`gh pr view ${prNumber} --json statusCheckRollup,reviewDecision`.nothrow();
+  const result = await $`gh pr view ${prNumber} --json statusCheckRollup,reviewDecision`
+    .quiet()
+    .nothrow();
 
   if (result.exitCode !== 0) {
     throw new PRNotFoundError(prNumber);
