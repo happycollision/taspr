@@ -188,6 +188,55 @@ describe("cli/commands/sync", () => {
     await $`git -C ${fixture.path} rebase --abort`.quiet().nothrow();
   });
 
+  test("updates branches after user completes rebase", async () => {
+    fixture = await createGitFixture();
+
+    // Create initial feature branch with a commit that has an ID
+    await fixture.checkout("feature-rebase-sync", { create: true });
+    await fixture.commit("Feature commit", { trailers: { "Taspr-Commit-Id": "rebase01" } });
+
+    // Run initial sync to push the branch
+    let result = await runSync(fixture.path);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Pushing 1 branch(es)");
+
+    // Get the initial commit hash on remote
+    const initialHash = (await $`git -C ${fixture.path} rev-parse HEAD`.text()).trim();
+
+    // Update main with a new commit via worktree (simulating another developer's work)
+    const tempWorktree = `${fixture.originPath}-worktree`;
+    await $`git clone ${fixture.originPath} ${tempWorktree}`.quiet();
+    await $`git -C ${tempWorktree} config user.email "other@example.com"`.quiet();
+    await $`git -C ${tempWorktree} config user.name "Other User"`.quiet();
+    await Bun.write(join(tempWorktree, "main-update.txt"), "New main content\n");
+    await $`git -C ${tempWorktree} add .`.quiet();
+    await $`git -C ${tempWorktree} commit -m "Update on main"`.quiet();
+    await $`git -C ${tempWorktree} push origin main`.quiet();
+    await $`rm -rf ${tempWorktree}`.quiet();
+
+    // Fetch and rebase onto new main (no conflicts)
+    await $`git -C ${fixture.path} fetch origin`.quiet();
+    await $`git -C ${fixture.path} rebase origin/main`.quiet();
+
+    // Verify the commit hash changed after rebase
+    const rebasedHash = (await $`git -C ${fixture.path} rev-parse HEAD`.text()).trim();
+    expect(rebasedHash).not.toBe(initialHash);
+
+    // Run sync - should detect the hash changed and update the branch
+    result = await runSync(fixture.path);
+    expect(result.exitCode).toBe(0);
+
+    // Should show that it's updating (not creating) the branch
+    expect(result.stdout).toContain("Pushing 1 branch(es)");
+
+    // Verify the remote branch now has the new hash (branch name includes dynamic username)
+    // Look for any remote branch containing "rebase01" and verify it has the new hash
+    const remoteBranches = (
+      await $`git -C ${fixture.path} ls-remote origin 'refs/heads/taspr/*/rebase01'`.text()
+    ).trim();
+    expect(remoteBranches).toContain(rebasedHash);
+  });
+
   // TODO: Add tests for --open flag once VCR-style testing is implemented
   // See: taspr-xtq (VCR-style testing for GitHub API calls)
 });
