@@ -13,9 +13,10 @@ import { tmpdir } from "node:os";
 import { createGitHubFixture, type GitHubFixture } from "./github-fixture.ts";
 import { generateUniqueId } from "./unique-id.ts";
 
-/** Mutable container for the current test's unique ID */
+/** Mutable container for the current test's context */
 interface TestContext {
   uniqueId: string;
+  testName?: string;
 }
 
 // ============================================================================
@@ -77,8 +78,10 @@ function createRepoMethods(config: RepoMethodsConfig) {
     },
 
     async commit(options?: CommitOptions): Promise<string> {
-      const filename = `file-${ctx.uniqueId}-${fileCounter++}.txt`;
-      const message = options?.message ?? `commit-${fileCounter}`;
+      fileCounter++;
+      const filename = `file-${ctx.uniqueId}-${fileCounter}.txt`;
+      const prefix = ctx.testName ?? "commit";
+      const message = options?.message ?? `${prefix} ${fileCounter}`;
       let fullMessage = `${message} [${ctx.uniqueId}]`;
       if (options?.trailers) {
         fullMessage += "\n\n";
@@ -96,7 +99,9 @@ function createRepoMethods(config: RepoMethodsConfig) {
       for (const [filename, content] of Object.entries(files)) {
         await Bun.write(join(path, filename), content);
       }
-      const message = options?.message ?? `commit-${fileCounter++}`;
+      fileCounter++;
+      const prefix = ctx.testName ?? "commit";
+      const message = options?.message ?? `${prefix} ${fileCounter}`;
       let fullMessage = `${message} [${ctx.uniqueId}]`;
       if (options?.trailers) {
         fullMessage += "\n\n";
@@ -141,10 +146,20 @@ export interface LocalRepo extends BaseRepo {
   updateOriginMain(message: string, files?: Record<string, string>): Promise<void>;
 }
 
+/** Options for creating a repo */
+export interface CreateRepoOptions {
+  /** Short name for this test, used as prefix in commit messages */
+  testName?: string;
+}
+
 /**
  * Create a local git repo with a bare origin (no GitHub).
  */
-async function createLocalRepo(ctx: TestContext): Promise<LocalRepo> {
+async function createLocalRepo(ctx: TestContext, options?: CreateRepoOptions): Promise<LocalRepo> {
+  // Set testName on context if provided
+  if (options?.testName) {
+    ctx.testName = options.testName;
+  }
   // Create the "origin" bare repository first
   const originPath = await mkdtemp(join(tmpdir(), "taspr-test-origin-"));
   await $`git init --bare ${originPath}`.quiet();
@@ -229,7 +244,15 @@ export interface GitHubRepo extends BaseRepo {
 /**
  * Clone a GitHub repo and return a GitHubRepo with helpers.
  */
-async function cloneGitHubRepo(github: GitHubFixture, ctx: TestContext): Promise<GitHubRepo> {
+async function cloneGitHubRepo(
+  github: GitHubFixture,
+  ctx: TestContext,
+  options?: CreateRepoOptions,
+): Promise<GitHubRepo> {
+  // Set testName on context if provided
+  if (options?.testName) {
+    ctx.testName = options.testName;
+  }
   const tmpResult = await $`mktemp -d`.text();
   const path = tmpResult.trim();
 
@@ -303,7 +326,7 @@ async function cloneGitHubRepo(github: GitHubFixture, ctx: TestContext): Promise
 
 export interface LocalRepoManager {
   /** Create a local repo with bare origin */
-  create(): Promise<LocalRepo>;
+  create(options?: CreateRepoOptions): Promise<LocalRepo>;
   /** Clean up all repos */
   cleanup(): Promise<void>;
   /** Current test's unique ID */
@@ -312,7 +335,7 @@ export interface LocalRepoManager {
 
 export interface GitHubRepoManager {
   /** Clone the GitHub test repo */
-  clone(): Promise<GitHubRepo>;
+  clone(options?: CreateRepoOptions): Promise<GitHubRepo>;
   /** Clean up all repos */
   cleanup(): Promise<void>;
   /** The GitHub fixture */
@@ -376,11 +399,11 @@ export function repoManager(options?: { github?: boolean }): LocalRepoManager | 
     });
 
     return {
-      async clone(): Promise<GitHubRepo> {
+      async clone(options?: CreateRepoOptions): Promise<GitHubRepo> {
         if (!githubFixture) {
           throw new Error("GitHub fixture not initialized - beforeAll hasn't run yet");
         }
-        const repo = await cloneGitHubRepo(githubFixture, ctx);
+        const repo = await cloneGitHubRepo(githubFixture, ctx, options);
         activeRepos.push(repo);
         return repo;
       },
@@ -420,8 +443,8 @@ export function repoManager(options?: { github?: boolean }): LocalRepoManager | 
   });
 
   return {
-    async create(): Promise<LocalRepo> {
-      const repo = await createLocalRepo(ctx);
+    async create(options?: CreateRepoOptions): Promise<LocalRepo> {
+      const repo = await createLocalRepo(ctx, options);
       activeRepos.push(repo);
       return repo;
     },
