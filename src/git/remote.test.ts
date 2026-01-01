@@ -1,4 +1,4 @@
-import { describe, test, expect, afterEach } from "bun:test";
+import { describe, test, expect } from "bun:test";
 import { repoManager } from "../../tests/helpers/local-repo.ts";
 import {
   getRemoteBranchCommit,

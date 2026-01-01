@@ -9,7 +9,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: land", () => {
   test.skipIf(SKIP_CI_TESTS)(
     "lands a single PR and deletes the branch",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "land" });
       await repo.branch("feature/land-test");
       await repo.commit();
 
@@ -51,7 +51,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: land", () => {
   test.skipIf(SKIP_CI_TESTS)(
     "retargets next PR to main after landing, preventing it from being closed",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "retarget" });
       await repo.branch("feature/retarget-test");
       await repo.commit();
       await repo.commit();
@@ -126,7 +126,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: land", () => {
   test.skipIf(SKIP_CI_TESTS)(
     "fails to land when PR cannot be fast-forwarded",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "conflict" });
       await repo.branch("feature/land-conflict-test");
       await repo.commit();
 
@@ -167,7 +167,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: land", () => {
   test(
     "reports no open PRs when stack has no PRs",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "no-pr" });
       await repo.branch("feature/no-pr-test");
       await repo.commit();
 
@@ -187,7 +187,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: land", () => {
   test.skipIf(SKIP_CI_TESTS)(
     "fails to land when CI checks are failing",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "land-ci-fail" });
       await repo.branch("feature/ci-fail-land-test");
       await repo.commit({ message: "[FAIL_CI] trigger CI failure" });
 
@@ -217,7 +217,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: land --all", () => {
   test.skipIf(SKIP_CI_TESTS)(
     "lands all consecutive ready PRs in a stack",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "land-all" });
       await repo.branch("feature/land-all-test");
       await repo.commit();
       await repo.commit();
@@ -260,7 +260,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: land --all", () => {
   test.skipIf(SKIP_CI_TESTS)(
     "stops at first non-ready PR when using --all",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "stop" });
       await repo.branch("feature/land-all-stop");
       await repo.commit({ message: "first-passes" });
       await repo.commit({ message: "[FAIL_CI] second-fails" });
@@ -310,7 +310,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: land --all", () => {
   test.skipIf(SKIP_CI_TESTS)(
     "snapshots readiness at start and doesn't land PRs that become ready during execution",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "snapshot" });
       await repo.branch("feature/snapshot-test");
       await repo.commit({ message: "first-ready" });
       await repo.commit({ message: "[FAIL_CI] second-not-ready" });
@@ -352,7 +352,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: land --all", () => {
   test.skipIf(SKIP_CI_TESTS)(
     "reports no ready PRs when first PR is not ready",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "not-ready" });
       await repo.branch("feature/not-ready");
       await repo.commit({ message: "[CI_SLOW_TEST] slow commit" });
 

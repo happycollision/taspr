@@ -1,4 +1,4 @@
-import { describe, test, expect, afterEach } from "bun:test";
+import { describe, test, expect } from "bun:test";
 import { $ } from "bun";
 import { repoManager } from "../../tests/helpers/local-repo.ts";
 import { getBranchName, pushBranch, type BranchNameConfig } from "./branches.ts";

@@ -10,7 +10,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR checks status", () =>
   test.skipIf(SKIP_CI_TESTS)(
     "returns 'passing' for PR with passing CI checks",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "checks-pass" });
       await repo.branch("feature/checks-pass");
       await repo.commit();
 
@@ -32,7 +32,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR checks status", () =>
   test.skipIf(SKIP_CI_TESTS)(
     "returns 'failing' for PR with failing CI checks",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "checks-fail" });
       await repo.branch("feature/checks-fail");
       await repo.commit({ message: "[FAIL_CI] trigger CI failure" });
 
@@ -54,7 +54,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR checks status", () =>
   test.skipIf(SKIP_CI_TESTS)(
     "returns 'pending' for PR with running CI checks",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "checks-pending" });
       await repo.branch("feature/checks-pending");
       await repo.commit({ message: "[CI_SLOW_TEST] slow commit" });
 
@@ -76,7 +76,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR checks status", () =>
   test.skipIf(SKIP_CI_TESTS)(
     "returns 'none' for PR with no CI checks configured",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "no-ci" });
       const branchName = await repo.branch("feature/no-ci");
 
       // Delete the CI workflow file
@@ -109,7 +109,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR review status", () =>
   test(
     "returns 'none' for PR with no review requirements",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "review-none" });
       const branchName = await repo.branch("feature/review-none");
 
       // Remove CI workflow for faster testing
@@ -141,7 +141,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR review status", () =>
   test.skip(
     "returns 'approved' after PR is approved",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "review-approved" });
       const branchName = await repo.branch("feature/review-approved");
 
       // Remove CI workflow for faster testing
@@ -176,7 +176,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR review status", () =>
   test.skip(
     "returns 'changes_requested' after changes are requested",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "review-changes" });
       const branchName = await repo.branch("feature/review-changes");
 
       // Remove CI workflow for faster testing
@@ -208,7 +208,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR review status", () =>
   test(
     "returns 'review_required' when branch protection requires reviews",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "review-required" });
 
       // Enable branch protection requiring reviews
       await repo.github.enableBranchProtection("main", {
@@ -256,7 +256,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR comment status", () =
   test(
     "returns zero counts for PR with no review threads",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "no-comments" });
       const branchName = await repo.branch("feature/no-comments");
 
       // Remove CI workflow for faster testing
@@ -285,7 +285,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR comment status", () =
   test(
     "returns correct counts for PR with unresolved review thread",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "with-comment" });
       const uniqueId = Date.now().toString(36);
       const branchName = await repo.branch("feature/with-comment");
 

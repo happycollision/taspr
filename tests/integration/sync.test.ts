@@ -69,7 +69,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync --open", () => {
   test(
     "creates PR for a single commit stack",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "single-pr" });
       await repo.branch("feature/test-pr");
       await repo.commit();
 
@@ -88,7 +88,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync --open", () => {
   test(
     "opens PRs for commits already pushed to remote",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "open-existing" });
       await repo.branch("feature/stacked-no-pr");
       await repo.commit();
       await repo.commit();
@@ -115,7 +115,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync --open", () => {
   test.skipIf(SKIP_CI_TESTS)(
     "CI passes for normal commits",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "ci-pass" });
       await repo.branch("feature/ci-pass-test");
       await repo.commit();
 
@@ -134,7 +134,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync --open", () => {
   test.skipIf(SKIP_CI_TESTS)(
     "CI fails for commits with [FAIL_CI] marker",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "sync-ci-fail" });
       await repo.branch("feature/ci-fail-test");
       await repo.commit({ message: "[FAIL_CI] trigger CI failure" });
 
@@ -157,7 +157,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync cleanup", () => {
   test.skipIf(SKIP_CI_TESTS)(
     "detects merged PRs and cleans up their remote branches when merged via GitHub UI",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "cleanup" });
       await repo.branch("feature/cleanup-test");
       await repo.commit();
       await repo.commit();

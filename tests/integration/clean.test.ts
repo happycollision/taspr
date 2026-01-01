@@ -9,7 +9,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: clean command", () => {
   test(
     "reports no orphaned branches when none exist",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "no-orphans" });
 
       // Run clean without any orphaned branches
       const result = await runClean(repo.path);
@@ -23,7 +23,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: clean command", () => {
   test(
     "--dry-run shows orphaned branches without deleting",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "dry-run" });
       await repo.branch("feature/clean-dry-run");
       await repo.commit();
 
@@ -64,7 +64,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: clean command", () => {
   test.skipIf(SKIP_CI_TESTS)(
     "deletes orphaned branches from merged PRs",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "delete" });
       await repo.branch("feature/clean-delete");
       await repo.commit();
 
@@ -105,7 +105,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: clean command", () => {
   test(
     "detects multiple orphaned branches",
     async () => {
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "multi" });
       await repo.branch("feature/clean-multi");
       await repo.commit();
       await repo.commit();
@@ -156,7 +156,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: clean command", () => {
       // 4. The PR branch is now behind main (different SHA), but has the same Taspr-Commit-Id
       // 5. taspr clean should detect the branch as orphaned via commit-id trailer search
 
-      const repo = await repos.clone();
+      const repo = await repos.clone({ testName: "amended" });
       await repo.branch("feature/amended-test");
       await repo.commit();
 
