@@ -235,9 +235,9 @@ async function runEventLoop(
 
         case "up":
           state = moveCursor(state, "up");
-          // Check for conflicts when moving in move mode
+          // Check for conflicts after reordering commits
           if (state.moveMode !== null && mergeBase) {
-            await checkMoveConflicts(state, mergeBase);
+            state = await checkOrderConflicts(state, mergeBase);
           }
           redraw();
           break;
@@ -245,7 +245,7 @@ async function runEventLoop(
         case "down":
           state = moveCursor(state, "down");
           if (state.moveMode !== null && mergeBase) {
-            await checkMoveConflicts(state, mergeBase);
+            state = await checkOrderConflicts(state, mergeBase);
           }
           redraw();
           break;
@@ -262,9 +262,7 @@ async function runEventLoop(
 
         case "space":
           state = toggleMoveMode(state);
-          if (state.moveMode !== null && mergeBase) {
-            await checkMoveConflicts(state, mergeBase);
-          }
+          // Don't check conflicts on enter - only after actual movement
           redraw();
           break;
 
@@ -284,33 +282,33 @@ async function runEventLoop(
 }
 
 /**
- * Check for conflicts when moving a commit.
+ * Check for conflicts based on the current order vs original order.
+ * Only reports conflicts for commit pairs that have swapped relative positions.
  */
-async function checkMoveConflicts(state: TUIState, mergeBase: string): Promise<TUIState> {
-  if (state.moveMode === null) {
-    return state;
-  }
-
-  const movingCommit = state.commits[state.moveMode];
-  if (!movingCommit) {
-    return state;
-  }
-
-  // Check against all other commits
+async function checkOrderConflicts(state: TUIState, mergeBase: string): Promise<TUIState> {
+  // Find pairs of commits that have swapped order relative to original
   for (let i = 0; i < state.commits.length; i++) {
-    if (i === state.moveMode) continue;
+    for (let j = i + 1; j < state.commits.length; j++) {
+      const commitI = state.commits[i];
+      const commitJ = state.commits[j];
+      if (!commitI || !commitJ) continue;
 
-    const otherCommit = state.commits[i];
-    if (!otherCommit) continue;
+      // Get original positions
+      const origPosI = state.originalOrder.indexOf(commitI.hash);
+      const origPosJ = state.originalOrder.indexOf(commitJ.hash);
 
-    const existingConflict = state.conflicts.get(`${movingCommit.hash}:${otherCommit.hash}`);
-
-    if (!existingConflict) {
-      try {
-        const result = await predictConflict(movingCommit.hash, otherCommit.hash, mergeBase);
-        state = setConflict(state, movingCommit.hash, otherCommit.hash, result);
-      } catch {
-        // Ignore prediction errors
+      // If commitI was originally AFTER commitJ, but now is BEFORE, check for conflict
+      if (origPosI !== -1 && origPosJ !== -1 && origPosI > origPosJ) {
+        // This pair has swapped - check for conflict if not already cached
+        const existingConflict = state.conflicts.get(`${commitI.hash}:${commitJ.hash}`);
+        if (!existingConflict) {
+          try {
+            const result = await predictConflict(commitI.hash, commitJ.hash, mergeBase);
+            state = setConflict(state, commitI.hash, commitJ.hash, result);
+          } catch {
+            // Ignore prediction errors
+          }
+        }
       }
     }
   }
@@ -413,7 +411,18 @@ export async function runGroupEditor(): Promise<GroupEditorResult> {
     console.log(renderError(result.error || "Failed to apply changes"));
     if (result.conflictFile) {
       console.log(`  Conflict in: ${result.conflictFile}`);
-      console.log("  Run 'git rebase --abort' to restore the original state.");
+      console.log("");
+      console.log("  To abort:");
+      console.log("    git rebase --abort");
+      console.log("");
+      console.log("  To resolve and continue:");
+      console.log("    1. Fix the conflict in the file(s) above");
+      console.log("    2. git add <fixed-files>");
+      console.log("    3. git rebase --continue");
+      console.log("");
+      console.log("  Note: If resolving requires removing commits at the start or end of a");
+      console.log("  group, the group trailers may become invalid. Run 'taspr group' again");
+      console.log("  after the rebase completes to fix any group issues.");
     }
     return { changed: false, error: result.error };
   }

@@ -12,8 +12,9 @@
  * - `divergedMain` - Feature branch + upstream changes (needs rebase)
  * - `withTasprIds` - 2 commits with Taspr-Commit-Id trailers
  * - `mixedTrailerStack` - Some commits have IDs, some don't
- * - `conflictScenario` - Setup that will conflict on rebase
+ * - `conflictScenario` - Setup that will conflict on rebase to main
  * - `multipleBranches` - Two independent feature branches
+ * - `reorderConflict` - Commits that conflict when reordered (for TUI testing)
  *
  * ## Usage in tests
  * ```ts
@@ -181,6 +182,40 @@ export const scenarios = {
       });
       await repo.commit({ message: "Second commit without ID" });
       await repo.commit({ message: "Third commit without ID" });
+    },
+  },
+
+  /**
+   * Stack where reordering commits would cause conflicts.
+   * Two commits modify the same file in incompatible ways.
+   * Good for testing conflict prediction in the group TUI.
+   */
+  reorderConflict: {
+    name: "reorder-conflict",
+    description: "Commits that conflict when reordered (for TUI testing)",
+    setup: async (repo: LocalRepo) => {
+      await repo.branch("feature");
+      // First commit creates a file with specific content
+      await repo.commitFiles(
+        { "config.ts": 'export const API_URL = "http://localhost:3000";\n' },
+        { message: "Add config file" },
+      );
+      // Second commit modifies the same line - safe in this order, conflicts if swapped
+      await repo.commitFiles(
+        {
+          "config.ts":
+            'export const API_URL = "http://localhost:3000";\nexport const TIMEOUT = 5000;\n',
+        },
+        { message: "Add timeout config" },
+      );
+      // Third commit also touches config - would conflict if moved before second
+      await repo.commitFiles(
+        {
+          "config.ts":
+            'export const API_URL = "http://localhost:3000";\nexport const TIMEOUT = 10000;\nexport const RETRIES = 3;\n',
+        },
+        { message: "Update timeout and add retries" },
+      );
     },
   },
 } satisfies Record<string, ScenarioDefinition>;

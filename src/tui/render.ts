@@ -1,6 +1,47 @@
 import type { TUIState, GroupValidationResult } from "./state.ts";
+import type { ConflictResult } from "../git/conflict-predict.ts";
 import { getGroupSummary, getConflict, validateGroupsContiguous } from "./state.ts";
 import { colors } from "./terminal.ts";
+
+/**
+ * Find if a commit at the given index has any conflict due to reordering.
+ * Returns the most severe conflict if multiple exist.
+ */
+function findConflictForCommit(state: TUIState, index: number): ConflictResult | null {
+  const commit = state.commits[index];
+  if (!commit) return null;
+
+  let worstConflict: ConflictResult | null = null;
+
+  // Check this commit against all others for conflicts due to reordering
+  for (let i = 0; i < state.commits.length; i++) {
+    if (i === index) continue;
+
+    const otherCommit = state.commits[i];
+    if (!otherCommit) continue;
+
+    // Get original positions
+    const origPosThis = state.originalOrder.indexOf(commit.hash);
+    const origPosOther = state.originalOrder.indexOf(otherCommit.hash);
+
+    // Check if their relative order changed
+    const currentlyBefore = index < i;
+    const wasOriginallyBefore = origPosThis < origPosOther;
+
+    if (currentlyBefore !== wasOriginallyBefore) {
+      // Order changed - check for conflict
+      const conflict = getConflict(state, commit.hash, otherCommit.hash);
+      if (conflict && conflict.status !== "clean") {
+        // Keep the worst conflict (conflict > warning)
+        if (!worstConflict || conflict.status === "conflict") {
+          worstConflict = conflict;
+        }
+      }
+    }
+  }
+
+  return worstConflict;
+}
 
 const SEPARATOR = "─".repeat(55);
 
@@ -105,23 +146,19 @@ function renderCommitLine(
     parts.push(`  ${subject}`);
   }
 
-  // Conflict indicator (if this commit is being moved past another)
-  if (state.moveMode !== null && state.moveMode !== index) {
-    const movingCommit = state.commits[state.moveMode];
-    if (movingCommit) {
-      const conflict = getConflict(state, movingCommit.hash, commit.hash);
-      if (conflict) {
-        if (conflict.status === "conflict") {
-          parts.push(colors.red(`  ✗ CONFLICT`));
-          if (conflict.files && conflict.files.length > 0) {
-            parts.push(colors.dim(` (${conflict.files[0]})`));
-          }
-        } else if (conflict.status === "warning") {
-          parts.push(colors.yellow(`  ⚠️`));
-          if (conflict.files && conflict.files.length > 0) {
-            parts.push(colors.dim(` (${conflict.files.join(", ")})`));
-          }
-        }
+  // Conflict indicator - show when commits have been reordered and conflict
+  // Check if this commit has any conflict with another due to reordering
+  const conflictInfo = findConflictForCommit(state, index);
+  if (conflictInfo) {
+    if (conflictInfo.status === "conflict") {
+      parts.push(colors.red(`  ✗ CONFLICT`));
+      if (conflictInfo.files && conflictInfo.files.length > 0) {
+        parts.push(colors.dim(` (${conflictInfo.files[0]})`));
+      }
+    } else if (conflictInfo.status === "warning") {
+      parts.push(colors.yellow(`  ⚠️`));
+      if (conflictInfo.files && conflictInfo.files.length > 0) {
+        parts.push(colors.dim(` (${conflictInfo.files.join(", ")})`));
       }
     }
   }
