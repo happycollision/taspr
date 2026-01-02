@@ -1,5 +1,6 @@
 import { test, expect, describe } from "bun:test";
 import { repoManager } from "../../tests/helpers/local-repo.ts";
+import { scenarios } from "../scenario/definitions.ts";
 import { isStackBehindMain, getCommitsBehind } from "./behind.ts";
 
 const repos = repoManager();
@@ -8,8 +9,7 @@ describe("git/behind", () => {
   describe("isStackBehindMain", () => {
     test("returns false when stack is up to date", async () => {
       const repo = await repos.create();
-      await repo.branch("feature");
-      await repo.commit();
+      await scenarios.singleCommit.setup(repo);
 
       const result = await isStackBehindMain({ cwd: repo.path });
       expect(result).toBe(false);
@@ -17,10 +17,7 @@ describe("git/behind", () => {
 
     test("returns true when origin/main has new commits", async () => {
       const repo = await repos.create();
-      await repo.branch("feature");
-      await repo.commit();
-
-      // Push a commit to origin/main (simulating another developer's work)
+      await scenarios.singleCommit.setup(repo);
       await repo.updateOriginMain("Commit from main");
 
       const result = await isStackBehindMain({ cwd: repo.path });
@@ -29,9 +26,7 @@ describe("git/behind", () => {
 
     test("returns false when stack is ahead but not behind", async () => {
       const repo = await repos.create();
-      await repo.branch("feature");
-      await repo.commit();
-      await repo.commit();
+      await scenarios.multiCommitStack.setup(repo);
 
       // Stack is ahead of main but not behind
       const result = await isStackBehindMain({ cwd: repo.path });
@@ -42,9 +37,7 @@ describe("git/behind", () => {
   describe("getCommitsBehind", () => {
     test("returns 0 when stack is up to date", async () => {
       const repo = await repos.create();
-      await repo.branch("feature");
-      await repo.commit();
-
+      await scenarios.singleCommit.setup(repo);
       await repo.fetch();
 
       const count = await getCommitsBehind({ cwd: repo.path });
@@ -53,14 +46,12 @@ describe("git/behind", () => {
 
     test("returns correct count when behind by N commits", async () => {
       const repo = await repos.create();
-      await repo.branch("feature");
-      await repo.commit();
+      await scenarios.singleCommit.setup(repo);
 
       // Push multiple commits to origin/main
       for (let i = 1; i <= 3; i++) {
         await repo.updateOriginMain(`Main commit ${i}`);
       }
-
       await repo.fetch();
 
       const count = await getCommitsBehind({ cwd: repo.path });
@@ -69,16 +60,11 @@ describe("git/behind", () => {
 
     test("returns correct count when diverged (both ahead and behind)", async () => {
       const repo = await repos.create();
-      await repo.branch("feature");
-      await repo.commit();
-      await repo.commit();
-
-      // Push commit to origin/main (creating divergence)
+      await scenarios.multiCommitStack.setup(repo);
       await repo.updateOriginMain("Divergent commit");
-
       await repo.fetch();
 
-      // Stack is 2 ahead, 1 behind
+      // Stack is 3 ahead, 1 behind
       const count = await getCommitsBehind({ cwd: repo.path });
       expect(count).toBe(1);
     });

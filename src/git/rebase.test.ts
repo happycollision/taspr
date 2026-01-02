@@ -2,6 +2,7 @@ import { test, expect, describe } from "bun:test";
 import { $ } from "bun";
 import { join } from "node:path";
 import { repoManager } from "../../tests/helpers/local-repo.ts";
+import { scenarios } from "../scenario/definitions.ts";
 import {
   injectMissingIds,
   allCommitsHaveIds,
@@ -82,7 +83,7 @@ describe("git/rebase", () => {
 
     test("no-op when stack is empty", async () => {
       const repo = await repos.create();
-      // No commits beyond merge-base
+      await scenarios.emptyStack.setup(repo);
 
       const result = await injectMissingIds({ cwd: repo.path });
 
@@ -94,10 +95,7 @@ describe("git/rebase", () => {
   describe("allCommitsHaveIds", () => {
     test("returns true when all commits have IDs", async () => {
       const repo = await repos.create();
-      await repo.branch("feature");
-
-      await repo.commit({ trailers: { "Taspr-Commit-Id": "id111111" } });
-      await repo.commit({ trailers: { "Taspr-Commit-Id": "id222222" } });
+      await scenarios.withTasprIds.setup(repo);
 
       const result = await allCommitsHaveIds({ cwd: repo.path });
       expect(result).toBe(true);
@@ -105,10 +103,7 @@ describe("git/rebase", () => {
 
     test("returns false when some commits missing IDs", async () => {
       const repo = await repos.create();
-      await repo.branch("feature");
-
-      await repo.commit({ trailers: { "Taspr-Commit-Id": "id111111" } });
-      await repo.commit();
+      await scenarios.singleCommit.setup(repo);
 
       const result = await allCommitsHaveIds({ cwd: repo.path });
       expect(result).toBe(false);
@@ -116,6 +111,7 @@ describe("git/rebase", () => {
 
     test("returns true for empty stack", async () => {
       const repo = await repos.create();
+      await scenarios.emptyStack.setup(repo);
 
       const result = await allCommitsHaveIds({ cwd: repo.path });
       expect(result).toBe(true);
@@ -137,9 +133,7 @@ describe("git/rebase", () => {
 
     test("returns 0 when all have IDs", async () => {
       const repo = await repos.create();
-      await repo.branch("feature");
-
-      await repo.commit({ trailers: { "Taspr-Commit-Id": "id111111" } });
+      await scenarios.withTasprIds.setup(repo);
 
       const count = await countCommitsMissingIds({ cwd: repo.path });
       expect(count).toBe(0);
