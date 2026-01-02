@@ -155,9 +155,7 @@ export function formatValidationError(result: Exclude<StackParseResult, { ok: tr
       lines.push(`  Group ${result.groupId} ("${result.groupTitle}") has Taspr-Group-Start but no`);
       lines.push("  matching Taspr-Group-End was found in subsequent commits.");
       lines.push("");
-      lines.push("  To fix, either:");
-      lines.push("    1. Add Taspr-Group-End trailer to the last commit in the group");
-      lines.push("    2. Remove the Taspr-Group-Start trailer to make them individual PRs");
+      lines.push("  To fix, run `taspr group --fix` to repair the group boundaries.");
       break;
 
     case "overlapping-groups":
@@ -171,7 +169,7 @@ export function formatValidationError(result: Exclude<StackParseResult, { ok: tr
         `    starts at ${result.group2.startCommit.slice(0, 8)} (inside "${result.group1.title}")`,
       );
       lines.push("");
-      lines.push("  Groups cannot overlap. Close the first group before starting a new one.");
+      lines.push("  To fix, run `taspr group --fix` to repair the group boundaries.");
       break;
 
     case "orphan-group-end":
@@ -182,9 +180,7 @@ export function formatValidationError(result: Exclude<StackParseResult, { ok: tr
       lines.push(`  Found Taspr-Group-End: ${result.groupId} but no matching`);
       lines.push("  Taspr-Group-Start was found in preceding commits.");
       lines.push("");
-      lines.push("  To fix, either:");
-      lines.push("    1. Add Taspr-Group-Start trailer to the first commit in the group");
-      lines.push("    2. Remove the Taspr-Group-End trailer");
+      lines.push("  To fix, run `taspr group --fix` to repair the group boundaries.");
       break;
   }
 

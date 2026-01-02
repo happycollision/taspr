@@ -15,6 +15,9 @@
  * - `conflictScenario` - Setup that will conflict on rebase to main
  * - `multipleBranches` - Two independent feature branches
  * - `reorderConflict` - Commits that conflict when reordered (for TUI testing)
+ * - `withGroups` - Stack with existing group trailers (for dissolve testing)
+ * - `unclosedGroup` - Stack with unclosed group (for sync validation testing)
+ * - `overlappingGroups` - Stack with overlapping groups (for sync validation testing)
  *
  * ## Usage in tests
  * ```ts
@@ -248,6 +251,68 @@ export const scenarios = {
       await repo.commit({
         message: "Standalone commit",
         trailers: { "Taspr-Commit-Id": "std00001" },
+      });
+    },
+  },
+
+  /**
+   * Stack with an unclosed group (Taspr-Group-Start but no Taspr-Group-End).
+   * For testing sync validation blocking.
+   */
+  unclosedGroup: {
+    name: "unclosed-group",
+    description: "Stack with unclosed group (for sync validation testing)",
+    setup: async (repo: LocalRepo) => {
+      await repo.branch("feature");
+      // Create a group start without matching end
+      await repo.commit({
+        message: "First grouped commit",
+        trailers: {
+          "Taspr-Commit-Id": "unc00001",
+          "Taspr-Group-Start": "group-incomplete",
+          "Taspr-Group-Title": "Incomplete Group",
+        },
+      });
+      await repo.commit({
+        message: "Second commit (missing group end)",
+        trailers: { "Taspr-Commit-Id": "unc00002" },
+      });
+    },
+  },
+
+  /**
+   * Stack with overlapping groups (nested Taspr-Group-Start trailers).
+   * For testing sync validation blocking.
+   */
+  overlappingGroups: {
+    name: "overlapping-groups",
+    description: "Stack with overlapping groups (for sync validation testing)",
+    setup: async (repo: LocalRepo) => {
+      await repo.branch("feature");
+      // Start first group
+      await repo.commit({
+        message: "Start first group",
+        trailers: {
+          "Taspr-Commit-Id": "ovr00001",
+          "Taspr-Group-Start": "group-outer",
+          "Taspr-Group-Title": "Outer Group",
+        },
+      });
+      // Start second group inside first (invalid)
+      await repo.commit({
+        message: "Start second group (overlapping)",
+        trailers: {
+          "Taspr-Commit-Id": "ovr00002",
+          "Taspr-Group-Start": "group-inner",
+          "Taspr-Group-Title": "Inner Group",
+        },
+      });
+      await repo.commit({
+        message: "Third commit",
+        trailers: {
+          "Taspr-Commit-Id": "ovr00003",
+          "Taspr-Group-End": "group-inner",
+        },
       });
     },
   },

@@ -2,6 +2,7 @@ import { requireCleanWorkingTree, DirtyWorkingTreeError } from "../../git/status
 import { injectMissingIds, getConflictInfo, formatConflictError } from "../../git/rebase.ts";
 import { getStackCommitsWithTrailers } from "../../git/commands.ts";
 import { parseStack } from "../../core/stack.ts";
+import { formatValidationError } from "../output.ts";
 import {
   getDefaultBranch,
   DependencyError,
@@ -121,7 +122,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     // Parse and validate the stack
     const stackResult = parseStack(commits);
     if (!stackResult.ok) {
-      console.error(`✗ Stack validation error: ${stackResult.error}`);
+      console.error(formatValidationError(stackResult));
       process.exit(1);
     }
 
