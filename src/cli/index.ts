@@ -4,6 +4,7 @@ import { viewCommand } from "./commands/view.ts";
 import { syncCommand } from "./commands/sync.ts";
 import { landCommand } from "./commands/land.ts";
 import { cleanCommand } from "./commands/clean.ts";
+import { groupCommand, dissolveCommand } from "./commands/group.ts";
 
 const program = new Command();
 
@@ -34,12 +35,19 @@ program
   .option("--force", "Also delete branches detected by commit-id only (may lose original content)")
   .action((options) => cleanCommand(options));
 
-program
-  .command("group")
-  .description("Group management commands")
-  .argument("<action>", "Action: create, edit, dissolve")
-  .action(() => {
-    console.log("group command not yet implemented");
-  });
+// Group command with subcommands
+const groupCmd = program.command("group").description("Manage commit groups");
+
+// Default action (no subcommand) - launches the TUI or applies a spec
+groupCmd
+  .option("--apply <json>", "Apply a group spec (JSON format) non-interactively")
+  .action((options) => groupCommand(options));
+
+// Dissolve subcommand
+groupCmd
+  .command("dissolve")
+  .description("Remove group trailers from commits")
+  .argument("[group-id]", "ID of the group to dissolve (optional, lists groups if omitted)")
+  .action((groupId?: string) => dissolveCommand(groupId));
 
 program.parse();
