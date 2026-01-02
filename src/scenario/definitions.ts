@@ -7,10 +7,11 @@
  *
  * ## Available scenarios
  * - `emptyStack` - Just main branch, no feature work
- * - `singleCommit` - One commit on feature branch
+ * - `singleCommit` - One commit on feature branch (no ID)
  * - `multiCommitStack` - 3 commits stacked on feature branch
  * - `divergedMain` - Feature branch + upstream changes (needs rebase)
- * - `withTasprIds` - Commits with Taspr-Commit-Id trailers
+ * - `withTasprIds` - 2 commits with Taspr-Commit-Id trailers
+ * - `mixedTrailerStack` - Some commits have IDs, some don't
  * - `conflictScenario` - Setup that will conflict on rebase
  * - `multipleBranches` - Two independent feature branches
  *
@@ -162,6 +163,24 @@ export const scenarios = {
       await repo.branch("feature-b");
       await repo.commit({ message: "Feature B work" });
       await repo.commit({ message: "More Feature B work" });
+    },
+  },
+
+  /**
+   * Stack with mixed trailer states - some commits have IDs, some don't.
+   * For testing ID injection and partial sync scenarios.
+   */
+  mixedTrailerStack: {
+    name: "mixed-trailer-stack",
+    description: "Stack with some commits missing Taspr-Commit-Id",
+    setup: async (repo: LocalRepo) => {
+      await repo.branch("feature");
+      await repo.commit({
+        message: "First commit with ID",
+        trailers: { "Taspr-Commit-Id": "mix00001" },
+      });
+      await repo.commit({ message: "Second commit without ID" });
+      await repo.commit({ message: "Third commit without ID" });
     },
   },
 } satisfies Record<string, ScenarioDefinition>;

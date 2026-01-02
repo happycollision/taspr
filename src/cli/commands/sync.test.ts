@@ -3,6 +3,7 @@ import { $ } from "bun";
 import { repoManager } from "../../../tests/helpers/local-repo.ts";
 import { runSync } from "../../../tests/integration/helpers.ts";
 import { getStackCommitsWithTrailers } from "../../git/commands.ts";
+import { scenarios } from "../../scenario/definitions.ts";
 import { join } from "node:path";
 
 const repos = repoManager();
@@ -30,9 +31,7 @@ describe("cli/commands/sync", () => {
 
   test("reports when all commits already have IDs", async () => {
     const repo = await repos.create();
-    await repo.branch("feature");
-
-    await repo.commit({ trailers: { "Taspr-Commit-Id": "id111111" } });
+    await scenarios.withTasprIds.setup(repo);
 
     const result = await runSync(repo.path);
 
@@ -42,7 +41,7 @@ describe("cli/commands/sync", () => {
 
   test("reports when stack is empty", async () => {
     const repo = await repos.create();
-    // No commits beyond merge-base
+    await scenarios.emptyStack.setup(repo);
 
     const result = await runSync(repo.path);
 

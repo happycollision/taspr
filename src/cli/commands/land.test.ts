@@ -1,13 +1,14 @@
 import { test, expect, describe } from "bun:test";
 import { repoManager } from "../../../tests/helpers/local-repo.ts";
 import { runLand } from "../../../tests/integration/helpers.ts";
+import { scenarios } from "../../scenario/definitions.ts";
 
 const repos = repoManager();
 
 describe("cli/commands/land", () => {
   test("reports when stack is empty", async () => {
     const repo = await repos.create();
-    // No commits beyond merge-base
+    await scenarios.emptyStack.setup(repo);
 
     const result = await runLand(repo.path);
 
@@ -17,11 +18,7 @@ describe("cli/commands/land", () => {
 
   test("reports when there are commits but no open PRs", async () => {
     const repo = await repos.create();
-    await repo.branch("feature");
-
-    // Create commits with IDs (so they're valid PR units)
-    await repo.commit({ trailers: { "Taspr-Commit-Id": "id111111" } });
-    await repo.commit({ trailers: { "Taspr-Commit-Id": "id222222" } });
+    await scenarios.withTasprIds.setup(repo);
 
     const result = await runLand(repo.path);
 

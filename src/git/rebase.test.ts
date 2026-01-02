@@ -121,11 +121,7 @@ describe("git/rebase", () => {
   describe("countCommitsMissingIds", () => {
     test("counts commits without IDs", async () => {
       const repo = await repos.create();
-      await repo.branch("feature");
-
-      await repo.commit({ trailers: { "Taspr-Commit-Id": "id111111" } });
-      await repo.commit();
-      await repo.commit();
+      await scenarios.mixedTrailerStack.setup(repo);
 
       const count = await countCommitsMissingIds({ cwd: repo.path });
       expect(count).toBe(2);
