@@ -33,6 +33,12 @@ export function detectPRUnits(commits: CommitWithTrailers[]): PRUnit[] {
         commitIds: commitId ? [commitId] : [],
         commits: [commit.hash],
       };
+
+      // Check if this is a single-commit group (Start and End on same commit)
+      if (endId === startId) {
+        units.push(currentGroup);
+        currentGroup = null;
+      }
     } else if (currentGroup) {
       // Add to current group
       if (commitId) {

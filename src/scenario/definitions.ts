@@ -218,6 +218,39 @@ export const scenarios = {
       );
     },
   },
+
+  /**
+   * Stack with existing group trailers.
+   * Good for testing dissolve command and group editing.
+   */
+  withGroups: {
+    name: "with-groups",
+    description: "Stack with existing group trailers (for dissolve testing)",
+    setup: async (repo: LocalRepo) => {
+      await repo.branch("feature");
+      // Create a group of 2 commits
+      await repo.commit({
+        message: "First grouped commit",
+        trailers: {
+          "Taspr-Commit-Id": "grp00001",
+          "Taspr-Group-Start": "group-abc",
+          "Taspr-Group-Title": "Feature Group",
+        },
+      });
+      await repo.commit({
+        message: "Second grouped commit",
+        trailers: {
+          "Taspr-Commit-Id": "grp00002",
+          "Taspr-Group-End": "group-abc",
+        },
+      });
+      // Add a standalone commit outside the group
+      await repo.commit({
+        message: "Standalone commit",
+        trailers: { "Taspr-Commit-Id": "std00001" },
+      });
+    },
+  },
 } satisfies Record<string, ScenarioDefinition>;
 
 /**

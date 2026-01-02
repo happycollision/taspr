@@ -351,14 +351,29 @@ export async function dissolveGroup(
   for (const commit of commits) {
     todoLines.push(`pick ${commit.hash}`);
 
-    // Check if this commit needs trailer removal
-    if (
-      commit.trailers["Taspr-Group-Start"] === groupId ||
-      commit.trailers["Taspr-Group-End"] === groupId ||
-      commit.trailers["Taspr-Group-Title"]
-    ) {
+    // Check if this commit belongs to the group we're dissolving
+    const isGroupStart = commit.trailers["Taspr-Group-Start"] === groupId;
+    const isGroupEnd = commit.trailers["Taspr-Group-End"] === groupId;
+
+    if (isGroupStart || isGroupEnd) {
+      // Build a list of specific trailers to remove for this group only
+      const trailersToRemove: string[] = [];
+      if (isGroupStart) {
+        trailersToRemove.push(`Taspr-Group-Start: ${groupId}`);
+        // Title is always on the start commit
+        const title = commit.trailers["Taspr-Group-Title"];
+        if (title) {
+          trailersToRemove.push(`Taspr-Group-Title: ${title}`);
+        }
+      }
+      if (isGroupEnd) {
+        trailersToRemove.push(`Taspr-Group-End: ${groupId}`);
+      }
+
+      // Use grep -v with exact patterns to remove only the specific trailers
+      const grepPatterns = trailersToRemove.map((t) => `-e "^${t}$"`).join(" ");
       todoLines.push(
-        `exec NEW_MSG=$(git log -1 --format=%B | grep -v "^Taspr-Group-") && git commit --amend --no-edit -m "$NEW_MSG"`,
+        `exec NEW_MSG=$(git log -1 --format=%B | grep -v ${grepPatterns}) && git commit --amend --no-edit -m "$NEW_MSG"`,
       );
     }
   }

@@ -3,6 +3,9 @@ import { dissolveGroup, applyGroupSpec, parseGroupSpec } from "../../git/group-r
 import { getStackCommitsWithTrailers } from "../../git/commands.ts";
 import { parseStack } from "../../core/stack.ts";
 import { formatValidationError } from "../output.ts";
+import { multiSelect } from "../../tui/multi-select.ts";
+import { isTTY } from "../../tui/terminal.ts";
+import type { PRUnit } from "../../types.ts";
 
 export interface GroupCommandOptions {
   apply?: string;
@@ -76,6 +79,7 @@ async function applyCommand(json: string): Promise<void> {
 
 /**
  * Dissolve a group by removing its trailers.
+ * If no groupId is provided, shows an interactive multi-select.
  */
 export async function dissolveCommand(groupId?: string): Promise<void> {
   // Get current stack
@@ -94,15 +98,34 @@ export async function dissolveCommand(groupId?: string): Promise<void> {
   }
 
   const units = validation.units;
-  const groups = units.filter((u) => u.type === "group");
+  const groups = units.filter((u): u is PRUnit & { type: "group" } => u.type === "group");
 
   if (groups.length === 0) {
     console.log("No groups in the current stack.");
     return;
   }
 
-  // If no groupId provided, list available groups
-  if (!groupId) {
+  // If groupId provided, dissolve that specific group
+  if (groupId) {
+    const targetGroup = groups.find((g) => g.id === groupId || g.id.startsWith(groupId));
+
+    if (!targetGroup) {
+      console.log(`Group "${groupId}" not found.`);
+      console.log("");
+      console.log("Available groups:");
+      for (const group of groups) {
+        console.log(`  ${group.id}: "${group.title}"`);
+      }
+      process.exit(1);
+    }
+
+    await dissolveSingleGroup(targetGroup);
+    return;
+  }
+
+  // No groupId provided - interactive mode
+  if (!isTTY()) {
+    // Non-interactive: list groups and exit
     console.log("Available groups:");
     for (const group of groups) {
       console.log(`  ${group.id}: "${group.title}" (${group.commits.length} commits)`);
@@ -112,27 +135,38 @@ export async function dissolveCommand(groupId?: string): Promise<void> {
     return;
   }
 
-  // Find the group to dissolve
-  const targetGroup = groups.find((g) => g.id === groupId || g.id.startsWith(groupId));
+  // Interactive multi-select
+  const options = groups.map((g) => ({
+    label: `"${g.title}"`,
+    value: g,
+    hint: `${g.commits.length} commit${g.commits.length === 1 ? "" : "s"}`,
+  }));
 
-  if (!targetGroup) {
-    console.log(`Group "${groupId}" not found.`);
-    console.log("");
-    console.log("Available groups:");
-    for (const group of groups) {
-      console.log(`  ${group.id}: "${group.title}"`);
-    }
-    process.exit(1);
+  const result = await multiSelect(options, "Select groups to dissolve:");
+
+  if (result.cancelled || result.selected.length === 0) {
+    console.log("No groups selected.");
+    return;
   }
 
-  console.log(`Dissolving group "${targetGroup.title}" (${targetGroup.id})...`);
+  // Dissolve selected groups
+  for (const group of result.selected) {
+    await dissolveSingleGroup(group);
+  }
+}
 
-  const result = await dissolveGroup(targetGroup.id);
+/**
+ * Dissolve a single group.
+ */
+async function dissolveSingleGroup(group: PRUnit): Promise<void> {
+  console.log(`Dissolving group "${group.title}" (${group.id})...`);
+
+  const result = await dissolveGroup(group.id);
 
   if (!result.success) {
     console.log(`Error: ${result.error}`);
     process.exit(1);
   }
 
-  console.log("✓ Group dissolved. Commits are now individual PRUnits.");
+  console.log(`✓ Group "${group.title}" dissolved.`);
 }

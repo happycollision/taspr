@@ -1,9 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { createLocalRepo, type LocalRepo } from "../scenario/core.ts";
 import { generateUniqueId } from "../../tests/helpers/unique-id.ts";
-import { applyGroupSpec, parseGroupSpec } from "./group-rebase.ts";
+import { applyGroupSpec, parseGroupSpec, dissolveGroup } from "./group-rebase.ts";
 import { getStackCommitsWithTrailers } from "./commands.ts";
 import { parseStack } from "../core/stack.ts";
+import { scenarios } from "../scenario/definitions.ts";
 
 describe("group-rebase", () => {
   let repo: LocalRepo;
@@ -357,6 +358,126 @@ describe("group-rebase", () => {
       expect(commits[0]!.trailers["Taspr-Group-Title"]).toBeUndefined();
       expect(commits[0]!.trailers["Taspr-Group-Start"]).toBeUndefined();
       expect(commits[0]!.trailers["Taspr-Group-End"]).toBeUndefined();
+    });
+  });
+
+  describe("dissolveGroup", () => {
+    test("dissolves a multi-commit group", async () => {
+      // Use the withGroups scenario
+      await scenarios.withGroups.setup(repo);
+
+      // Verify the group exists before dissolving
+      let commits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      expect(commits).toHaveLength(3);
+      expect(commits[0]!.trailers["Taspr-Group-Start"]).toBe("group-abc");
+      expect(commits[0]!.trailers["Taspr-Group-Title"]).toBe("Feature Group");
+      expect(commits[1]!.trailers["Taspr-Group-End"]).toBe("group-abc");
+
+      // Dissolve the group
+      const result = await dissolveGroup("group-abc", { cwd: repo.path });
+      expect(result.success).toBe(true);
+
+      // Verify group trailers were removed
+      commits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      expect(commits).toHaveLength(3);
+
+      // First commit should have no group trailers
+      expect(commits[0]!.trailers["Taspr-Group-Start"]).toBeUndefined();
+      expect(commits[0]!.trailers["Taspr-Group-Title"]).toBeUndefined();
+      expect(commits[0]!.trailers["Taspr-Group-End"]).toBeUndefined();
+
+      // Second commit should have no group trailers
+      expect(commits[1]!.trailers["Taspr-Group-Start"]).toBeUndefined();
+      expect(commits[1]!.trailers["Taspr-Group-End"]).toBeUndefined();
+
+      // Third commit was never in a group, should be unchanged
+      expect(commits[2]!.trailers["Taspr-Commit-Id"]).toBe("std00001");
+
+      // parseStack should now see 3 individual units, not a group
+      const parsed = parseStack(commits);
+      expect(parsed.ok).toBe(true);
+      if (parsed.ok) {
+        expect(parsed.units).toHaveLength(3);
+        expect(parsed.units.every((u) => u.type === "single")).toBe(true);
+      }
+    });
+
+    test("dissolves a single-commit group", async () => {
+      await repo.branch("feature");
+      await repo.commit({
+        message: "Single commit group",
+        trailers: {
+          "Taspr-Commit-Id": "single01",
+          "Taspr-Group-Start": "single-group",
+          "Taspr-Group-Title": "Single Group",
+          "Taspr-Group-End": "single-group",
+        },
+      });
+
+      // Verify group exists
+      let commits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      expect(commits[0]!.trailers["Taspr-Group-Start"]).toBe("single-group");
+      expect(commits[0]!.trailers["Taspr-Group-End"]).toBe("single-group");
+
+      // Dissolve
+      const result = await dissolveGroup("single-group", { cwd: repo.path });
+      expect(result.success).toBe(true);
+
+      // Verify trailers removed
+      commits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      expect(commits[0]!.trailers["Taspr-Group-Start"]).toBeUndefined();
+      expect(commits[0]!.trailers["Taspr-Group-Title"]).toBeUndefined();
+      expect(commits[0]!.trailers["Taspr-Group-End"]).toBeUndefined();
+      // Taspr-Commit-Id should remain
+      expect(commits[0]!.trailers["Taspr-Commit-Id"]).toBe("single01");
+    });
+
+    test("returns error for non-existent group", async () => {
+      await repo.branch("feature");
+      await repo.commit({ message: "Regular commit" });
+
+      const result = await dissolveGroup("nonexistent", { cwd: repo.path });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("nonexistent");
+      expect(result.error).toContain("not found");
+    });
+
+    test("only removes trailers for the specified group", async () => {
+      await repo.branch("feature");
+      // Create two groups
+      await repo.commit({
+        message: "Group A commit 1",
+        trailers: {
+          "Taspr-Group-Start": "group-a",
+          "Taspr-Group-Title": "Group A",
+          "Taspr-Group-End": "group-a",
+        },
+      });
+      await repo.commit({
+        message: "Group B commit 1",
+        trailers: {
+          "Taspr-Group-Start": "group-b",
+          "Taspr-Group-Title": "Group B",
+          "Taspr-Group-End": "group-b",
+        },
+      });
+
+      // Dissolve only group-a
+      const result = await dissolveGroup("group-a", { cwd: repo.path });
+      expect(result.success).toBe(true);
+
+      // Verify group-a is dissolved but group-b remains
+      const commits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      expect(commits).toHaveLength(2);
+
+      // First commit (was group-a) should have no group trailers
+      expect(commits[0]!.trailers["Taspr-Group-Start"]).toBeUndefined();
+      expect(commits[0]!.trailers["Taspr-Group-Title"]).toBeUndefined();
+
+      // Second commit (group-b) should still have its trailers
+      expect(commits[1]!.trailers["Taspr-Group-Start"]).toBe("group-b");
+      expect(commits[1]!.trailers["Taspr-Group-Title"]).toBe("Group B");
+      expect(commits[1]!.trailers["Taspr-Group-End"]).toBe("group-b");
     });
   });
 });

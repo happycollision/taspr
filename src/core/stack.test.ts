@@ -221,6 +221,42 @@ describe("core/stack", () => {
       expect(units[0]?.id).toBe("g1");
       expect(units[0]?.commits).toEqual(["aaa111"]);
     });
+
+    test("handles single-commit group followed by multi-commit group", () => {
+      // Regression test: single-commit groups must close properly before
+      // the next group starts, otherwise the parser thinks all commits
+      // belong to the first group
+      const commits = [
+        makeCommit("aaa111", "Single-commit group", {
+          "Taspr-Commit-Id": "a1",
+          "Taspr-Group-Start": "g1",
+          "Taspr-Group-Title": "Group A",
+          "Taspr-Group-End": "g1",
+        }),
+        makeCommit("bbb222", "Multi-commit group start", {
+          "Taspr-Commit-Id": "b2",
+          "Taspr-Group-Start": "g2",
+          "Taspr-Group-Title": "Group B",
+        }),
+        makeCommit("ccc333", "Multi-commit group end", {
+          "Taspr-Commit-Id": "c3",
+          "Taspr-Group-End": "g2",
+        }),
+      ];
+
+      const units = detectPRUnits(commits);
+
+      expect(units).toHaveLength(2);
+      expect(units[0]?.type).toBe("group");
+      expect(units[0]?.id).toBe("g1");
+      expect(units[0]?.title).toBe("Group A");
+      expect(units[0]?.commits).toEqual(["aaa111"]);
+
+      expect(units[1]?.type).toBe("group");
+      expect(units[1]?.id).toBe("g2");
+      expect(units[1]?.title).toBe("Group B");
+      expect(units[1]?.commits).toEqual(["bbb222", "ccc333"]);
+    });
   });
 
   describe("parseStack", () => {
