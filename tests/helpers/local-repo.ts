@@ -8,28 +8,45 @@
 import { $ } from "bun";
 import { beforeAll, beforeEach, afterEach } from "bun:test";
 import { join } from "node:path";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm } from "node:fs/promises";
 import { createGitHubFixture, type GitHubFixture } from "./github-fixture.ts";
 import { generateUniqueId } from "./unique-id.ts";
+import {
+  createLocalRepo as createLocalRepoCore,
+  type LocalRepo,
+  type CommitOptions,
+  type ScenarioContext,
+} from "../../src/scenario/core.ts";
+
+// Re-export types for backwards compatibility
+export type { LocalRepo, CommitOptions };
 
 /** Mutable container for the current test's context */
-interface TestContext {
-  uniqueId: string;
+interface TestContext extends ScenarioContext {
   testName?: string;
+}
+
+/** Options for creating a repo */
+export interface CreateRepoOptions {
+  /** Short name for this test, used as prefix in commit messages */
+  testName?: string;
+}
+
+/**
+ * Create a local git repo with a bare origin (no GitHub).
+ * Wrapper that maps testName to scenarioName for the core function.
+ */
+async function createLocalRepo(ctx: TestContext, options?: CreateRepoOptions): Promise<LocalRepo> {
+  // Map testName to scenarioName for the core function
+  if (options?.testName) {
+    ctx.scenarioName = options.testName;
+  }
+  return createLocalRepoCore(ctx, { scenarioName: options?.testName });
 }
 
 // ============================================================================
 // Base repo interface (shared by both local and GitHub repos)
 // ============================================================================
-
-/** Options for creating a commit */
-export interface CommitOptions {
-  /** Optional commit message (auto-generated if not provided) */
-  message?: string;
-  /** Git trailers to add to the commit */
-  trailers?: Record<string, string>;
-}
 
 interface BaseRepo {
   path: string;
@@ -59,7 +76,7 @@ interface BaseRepo {
 }
 
 // ============================================================================
-// Shared repo methods factory
+// Shared repo methods factory (for GitHub repos only now)
 // ============================================================================
 
 interface RepoMethodsConfig {
@@ -133,92 +150,6 @@ function createRepoMethods(config: RepoMethodsConfig) {
     },
 
     cleanup: cleanupFn,
-  };
-}
-
-// ============================================================================
-// Local-only repo (no GitHub)
-// ============================================================================
-
-export interface LocalRepo extends BaseRepo {
-  originPath: string;
-  /** Update origin/main with a new commit (simulates another developer's work) */
-  updateOriginMain(message: string, files?: Record<string, string>): Promise<void>;
-}
-
-/** Options for creating a repo */
-export interface CreateRepoOptions {
-  /** Short name for this test, used as prefix in commit messages */
-  testName?: string;
-}
-
-/**
- * Create a local git repo with a bare origin (no GitHub).
- */
-async function createLocalRepo(ctx: TestContext, options?: CreateRepoOptions): Promise<LocalRepo> {
-  // Set testName on context if provided
-  if (options?.testName) {
-    ctx.testName = options.testName;
-  }
-  // Create the "origin" bare repository first
-  const originPath = await mkdtemp(join(tmpdir(), "taspr-test-origin-"));
-  await $`git init --bare ${originPath}`.quiet();
-
-  // Create the working repository
-  const path = await mkdtemp(join(tmpdir(), "taspr-test-"));
-  await $`git init ${path}`.quiet();
-  await $`git -C ${path} config user.email "test@example.com"`.quiet();
-  await $`git -C ${path} config user.name "Test User"`.quiet();
-
-  // Add origin remote pointing to the bare repo
-  await $`git -C ${path} remote add origin ${originPath}`.quiet();
-
-  // Create initial commit on main
-  const readmePath = join(path, "README.md");
-  await Bun.write(readmePath, "# Test Repo\n");
-  await $`git -C ${path} add .`.quiet();
-  await $`git -C ${path} commit -m "Initial commit"`.quiet();
-
-  // Push main to origin so origin/main exists
-  await $`git -C ${path} push -u origin main`.quiet();
-
-  const methods = createRepoMethods({
-    path,
-    ctx,
-    cleanupFn: async () => {
-      await rm(path, { recursive: true, force: true });
-      await rm(originPath, { recursive: true, force: true });
-    },
-  });
-
-  return {
-    path,
-    originPath,
-    ...methods,
-
-    async updateOriginMain(message: string, files?: Record<string, string>): Promise<void> {
-      const tempWorktree = `${originPath}-worktree-${Date.now()}`;
-      try {
-        await $`git clone ${originPath} ${tempWorktree}`.quiet();
-        await $`git -C ${tempWorktree} config user.email "other@example.com"`.quiet();
-        await $`git -C ${tempWorktree} config user.name "Other User"`.quiet();
-
-        if (files) {
-          for (const [filename, content] of Object.entries(files)) {
-            await Bun.write(join(tempWorktree, filename), content);
-          }
-        } else {
-          const filename = `main-update-${Date.now()}.txt`;
-          await Bun.write(join(tempWorktree, filename), `Update: ${message}\n`);
-        }
-
-        await $`git -C ${tempWorktree} add .`.quiet();
-        await $`git -C ${tempWorktree} commit -m ${message}`.quiet();
-        await $`git -C ${tempWorktree} push origin main`.quiet();
-      } finally {
-        await rm(tempWorktree, { recursive: true, force: true });
-      }
-    },
   };
 }
 
