@@ -96,15 +96,12 @@ describe("cli/commands/sync", () => {
     // Should have exactly these lines (in order):
     // 1. "Adding IDs to 1 commit(s)..."
     // 2. "✓ Added Taspr-Commit-Id to 1 commit(s)"
-    // 3. "" (blank line before pushing)
-    // 4. "Pushing 1 branch(es)..."
-    // 5. "" (blank line)
-    // 6. "✓ 1 branch(es) pushed without PR (use --open to create)"
+    // 3. "✓ 1 commit(s) ready (use --open to create PRs)"
+    // Note: Branches are NOT pushed until --open is used (no remote clutter)
     expect(lines).toEqual([
       "Adding IDs to 1 commit(s)...",
       "✓ Added Taspr-Commit-Id to 1 commit(s)",
-      "Pushing 1 branch(es)...",
-      "✓ 1 branch(es) pushed without PR (use --open to create)",
+      "✓ 1 commit(s) ready (use --open to create PRs)",
     ]);
 
     // Should NOT contain any of these noise patterns
@@ -156,45 +153,26 @@ describe("cli/commands/sync", () => {
     await $`git -C ${repo.path} rebase --abort`.quiet().nothrow();
   });
 
-  test("updates branches after user completes rebase", async () => {
+  test("does not push branches without --open flag", async () => {
     const repo = await repos.create();
 
     // Create initial feature branch with a commit that has an ID
     await repo.branch("feature");
-    await repo.commit({ trailers: { "Taspr-Commit-Id": "rebase01" } });
+    await repo.commit({ trailers: { "Taspr-Commit-Id": "nopush01" } });
 
-    // Run initial sync to push the branch
-    let result = await runSync(repo.path);
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("Pushing 1 branch(es)");
-
-    // Get the initial commit hash on remote
-    const initialHash = (await $`git -C ${repo.path} rev-parse HEAD`.text()).trim();
-
-    // Update main with a new commit (simulating another developer's work)
-    await repo.updateOriginMain("Update on main");
-
-    // Fetch and rebase onto new main (no conflicts)
-    await repo.fetch();
-    await $`git -C ${repo.path} rebase origin/main`.quiet();
-
-    // Verify the commit hash changed after rebase
-    const rebasedHash = (await $`git -C ${repo.path} rev-parse HEAD`.text()).trim();
-    expect(rebasedHash).not.toBe(initialHash);
-
-    // Run sync - should detect the hash changed and update the branch
-    result = await runSync(repo.path);
+    // Run sync without --open
+    const result = await runSync(repo.path);
     expect(result.exitCode).toBe(0);
 
-    // Should show that it's updating (not creating) the branch
-    expect(result.stdout).toContain("Pushing 1 branch(es)");
+    // Should indicate commit is ready, NOT that it was pushed
+    expect(result.stdout).toContain("1 commit(s) ready (use --open to create PRs)");
+    expect(result.stdout).not.toContain("Pushed");
 
-    // Verify the remote branch now has the new hash (branch name includes dynamic username)
-    // Look for any remote branch containing "rebase01" and verify it has the new hash
+    // Verify the remote branch does NOT exist
     const remoteBranches = (
-      await $`git -C ${repo.path} ls-remote origin 'refs/heads/taspr/*/rebase01'`.text()
+      await $`git -C ${repo.path} ls-remote origin 'refs/heads/taspr/*/nopush01'`.text()
     ).trim();
-    expect(remoteBranches).toContain(rebasedHash);
+    expect(remoteBranches).toBe("");
   });
 
   // TODO: Add tests for --open flag once VCR-style testing is implemented

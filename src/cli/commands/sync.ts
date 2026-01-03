@@ -168,24 +168,27 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     const created: PRInfo[] = [];
     const updated: PRInfo[] = [];
     const skippedNoPR: string[] = [];
-
-    const totalToPush = summary.toCreate + summary.toUpdate;
-    if (totalToPush > 0) {
-      console.log(`\nPushing ${totalToPush} branch(es)...`);
-    }
+    let pushedCount = 0;
 
     for (const unit of activeUnits) {
       const headBranch = getBranchName(unit.id, branchConfig);
       const headCommit = asserted(unit.commits.at(-1));
       const status = asserted(syncStatuses.get(unit.id));
 
-      // Only push if needed
-      if (status.needsCreate || status.needsUpdate) {
-        await pushBranch(headCommit, headBranch, status.needsUpdate);
-      }
-
-      // Check for existing PR
+      // Check for existing PR first to decide whether to push
       const existingPR = await findPRByBranch(headBranch);
+
+      // Only push if:
+      // 1. PR exists and needs update, OR
+      // 2. --open is specified (will create PR)
+      const shouldPush =
+        (existingPR && status.needsUpdate) ||
+        (options.open && (status.needsCreate || status.needsUpdate));
+
+      if (shouldPush) {
+        await pushBranch(headCommit, headBranch, status.needsUpdate);
+        pushedCount++;
+      }
 
       if (existingPR) {
         if (status.needsUpdate) {
@@ -201,16 +204,20 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
         });
         created.push({ ...pr, state: "OPEN", title: unit.title });
       } else if (status.needsCreate) {
-        // No PR and --open not specified
+        // No PR and --open not specified - don't push, just track
         skippedNoPR.push(unit.title);
       }
 
-      // Next PR bases on this branch
+      // Next PR bases on this branch (use local branch name for stacking context)
       baseBranch = headBranch;
     }
 
     // Report results
     console.log("");
+
+    if (pushedCount > 0) {
+      console.log(`✓ Pushed ${pushedCount} branch(es)`);
+    }
 
     if (created.length > 0) {
       console.log(`✓ Created ${created.length} PR(s):`);
@@ -224,10 +231,10 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     }
 
     if (skippedNoPR.length > 0) {
-      console.log(`✓ ${skippedNoPR.length} branch(es) pushed without PR (use --open to create)`);
+      console.log(`✓ ${skippedNoPR.length} commit(s) ready (use --open to create PRs)`);
     }
 
-    if (summary.upToDate > 0) {
+    if (summary.upToDate > 0 && pushedCount === 0 && skippedNoPR.length === 0) {
       console.log(`✓ ${summary.upToDate} branch(es) already up to date`);
     }
   } catch (error) {
