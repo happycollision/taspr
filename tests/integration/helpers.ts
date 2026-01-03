@@ -22,8 +22,9 @@ export async function runTaspr(
   command: string,
   args: string[] = [],
 ): Promise<TasprResult> {
+  // Set TASPR_NO_TTY=1 to force non-interactive mode regardless of TTY status
   const result =
-    await $`bun run ${join(import.meta.dir, "../../src/cli/index.ts")} ${command} ${args}`
+    await $`TASPR_NO_TTY=1 bun run ${join(import.meta.dir, "../../src/cli/index.ts")} ${command} ${args}`
       .cwd(cwd)
       .nothrow()
       .quiet();

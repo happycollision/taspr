@@ -6,6 +6,78 @@ import type { GitOptions } from "./commands.ts";
 import { getMergeBase, getStackCommitsWithTrailers } from "./commands.ts";
 import { generateCommitId } from "../core/id.ts";
 
+/**
+ * Run an interactive rebase with a custom sequence editor script.
+ * Uses --no-autosquash to prevent fixup!/amend! commits from being auto-reordered.
+ *
+ * @param script - Shell script content for GIT_SEQUENCE_EDITOR
+ * @param mergeBase - The merge base to rebase onto
+ * @param options - Git options (cwd)
+ * @returns Result with success status and optional error/conflict info
+ */
+async function runInteractiveRebase(
+  script: string,
+  mergeBase: string,
+  options: GitOptions = {},
+): Promise<ReorderResult> {
+  const { cwd } = options;
+  const scriptPath = join(tmpdir(), `taspr-rebase-${Date.now()}.sh`);
+
+  try {
+    await writeFile(scriptPath, script);
+    await chmod(scriptPath, "755");
+
+    const result = cwd
+      ? await $`GIT_SEQUENCE_EDITOR=${scriptPath} git -C ${cwd} rebase -i --no-autosquash ${mergeBase}`
+          .quiet()
+          .nothrow()
+      : await $`GIT_SEQUENCE_EDITOR=${scriptPath} git rebase -i --no-autosquash ${mergeBase}`
+          .quiet()
+          .nothrow();
+
+    if (result.exitCode !== 0) {
+      // Check for conflict
+      const statusResult = cwd
+        ? await $`git -C ${cwd} status --porcelain`.text()
+        : await $`git status --porcelain`.text();
+
+      const conflictMatch = statusResult.match(/^(?:UU|AA|DD|AU|UA|DU|UD) (.+)$/m);
+
+      if (conflictMatch?.[1]) {
+        return {
+          success: false,
+          error: "Rebase conflict",
+          conflictFile: conflictMatch[1],
+        };
+      }
+
+      return { success: false, error: result.stderr.toString() };
+    }
+
+    return { success: true };
+  } finally {
+    try {
+      await unlink(scriptPath);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+}
+
+/**
+ * Create a rebase sequence editor script from todo lines.
+ */
+function createRebaseScript(todoLines: string[]): string {
+  return `#!/bin/bash
+set -e
+TODO_FILE="$1"
+
+cat > "$TODO_FILE" << 'TODOEOF'
+${todoLines.join("\n")}
+TODOEOF
+`;
+}
+
 export interface GroupAssignment {
   /** Commit hashes in this group (oldest first) */
   commits: string[];
@@ -52,8 +124,6 @@ export async function applyGroupSpec(
   spec: GroupSpec,
   options: GitOptions = {},
 ): Promise<ReorderResult> {
-  const { cwd } = options;
-
   // Get current commits
   const commits = await getStackCommitsWithTrailers(options);
   if (commits.length === 0) {
@@ -191,12 +261,6 @@ export async function applyGroupSpec(
   // Get merge base
   const mergeBase = await getMergeBase(options);
 
-  // Create the rebase script
-  // This script:
-  // 1. Rewrites the todo to use the new order
-  // 2. Adds exec commands after specific commits to add trailers
-  const scriptPath = join(tmpdir(), `taspr-group-${Date.now()}.sh`);
-
   // Build the new todo content
   const todoLines: string[] = [];
   for (const hash of newOrder) {
@@ -228,53 +292,7 @@ export async function applyGroupSpec(
     }
   }
 
-  const script = `#!/bin/bash
-set -e
-TODO_FILE="$1"
-
-cat > "$TODO_FILE" << 'TODOEOF'
-${todoLines.join("\n")}
-TODOEOF
-`;
-
-  try {
-    await writeFile(scriptPath, script);
-    await chmod(scriptPath, "755");
-
-    // Run the rebase
-    const result = cwd
-      ? await $`GIT_SEQUENCE_EDITOR=${scriptPath} git -C ${cwd} rebase -i ${mergeBase}`
-          .quiet()
-          .nothrow()
-      : await $`GIT_SEQUENCE_EDITOR=${scriptPath} git rebase -i ${mergeBase}`.quiet().nothrow();
-
-    if (result.exitCode !== 0) {
-      // Check for conflict
-      const statusResult = cwd
-        ? await $`git -C ${cwd} status --porcelain`.text()
-        : await $`git status --porcelain`.text();
-
-      const conflictMatch = statusResult.match(/^(?:UU|AA|DD|AU|UA|DU|UD) (.+)$/m);
-
-      if (conflictMatch?.[1]) {
-        return {
-          success: false,
-          error: "Rebase conflict",
-          conflictFile: conflictMatch[1],
-        };
-      }
-
-      return { success: false, error: result.stderr.toString() };
-    }
-
-    return { success: true };
-  } finally {
-    try {
-      await unlink(scriptPath);
-    } catch {
-      // Ignore cleanup errors
-    }
-  }
+  return runInteractiveRebase(createRebaseScript(todoLines), mergeBase, options);
 }
 
 /**
@@ -332,7 +350,6 @@ export async function dissolveGroup(
   groupId: string,
   options: GitOptions = {},
 ): Promise<ReorderResult> {
-  const { cwd } = options;
   const commits = await getStackCommitsWithTrailers(options);
 
   // Find commits belonging to this group
@@ -378,38 +395,7 @@ export async function dissolveGroup(
     }
   }
 
-  const scriptPath = join(tmpdir(), `taspr-dissolve-${Date.now()}.sh`);
-  const script = `#!/bin/bash
-set -e
-TODO_FILE="$1"
-
-cat > "$TODO_FILE" << 'TODOEOF'
-${todoLines.join("\n")}
-TODOEOF
-`;
-
-  try {
-    await writeFile(scriptPath, script);
-    await chmod(scriptPath, "755");
-
-    const result = cwd
-      ? await $`GIT_SEQUENCE_EDITOR=${scriptPath} git -C ${cwd} rebase -i ${mergeBase}`
-          .quiet()
-          .nothrow()
-      : await $`GIT_SEQUENCE_EDITOR=${scriptPath} git rebase -i ${mergeBase}`.quiet().nothrow();
-
-    if (result.exitCode !== 0) {
-      return { success: false, error: result.stderr.toString() };
-    }
-
-    return { success: true };
-  } finally {
-    try {
-      await unlink(scriptPath);
-    } catch {
-      // Ignore cleanup errors
-    }
-  }
+  return runInteractiveRebase(createRebaseScript(todoLines), mergeBase, options);
 }
 
 /**
@@ -433,7 +419,6 @@ export async function addGroupEnd(
   groupId: string,
   options: GitOptions = {},
 ): Promise<ReorderResult> {
-  const { cwd } = options;
   const commits = await getStackCommitsWithTrailers(options);
 
   const targetCommit = commits.find((c) => c.hash === commitHash || c.hash.startsWith(commitHash));
@@ -455,38 +440,7 @@ export async function addGroupEnd(
     }
   }
 
-  const scriptPath = join(tmpdir(), `taspr-add-end-${Date.now()}.sh`);
-  const script = `#!/bin/bash
-set -e
-TODO_FILE="$1"
-
-cat > "$TODO_FILE" << 'TODOEOF'
-${todoLines.join("\n")}
-TODOEOF
-`;
-
-  try {
-    await writeFile(scriptPath, script);
-    await chmod(scriptPath, "755");
-
-    const result = cwd
-      ? await $`GIT_SEQUENCE_EDITOR=${scriptPath} git -C ${cwd} rebase -i ${mergeBase}`
-          .quiet()
-          .nothrow()
-      : await $`GIT_SEQUENCE_EDITOR=${scriptPath} git rebase -i ${mergeBase}`.quiet().nothrow();
-
-    if (result.exitCode !== 0) {
-      return { success: false, error: result.stderr.toString() };
-    }
-
-    return { success: true };
-  } finally {
-    try {
-      await unlink(scriptPath);
-    } catch {
-      // Ignore cleanup errors
-    }
-  }
+  return runInteractiveRebase(createRebaseScript(todoLines), mergeBase, options);
 }
 
 /**
@@ -498,7 +452,6 @@ export async function removeGroupStart(
   groupId: string,
   options: GitOptions = {},
 ): Promise<ReorderResult> {
-  const { cwd } = options;
   const commits = await getStackCommitsWithTrailers(options);
 
   const targetCommit = commits.find((c) => c.hash === commitHash || c.hash.startsWith(commitHash));
@@ -527,38 +480,7 @@ export async function removeGroupStart(
     }
   }
 
-  const scriptPath = join(tmpdir(), `taspr-remove-start-${Date.now()}.sh`);
-  const script = `#!/bin/bash
-set -e
-TODO_FILE="$1"
-
-cat > "$TODO_FILE" << 'TODOEOF'
-${todoLines.join("\n")}
-TODOEOF
-`;
-
-  try {
-    await writeFile(scriptPath, script);
-    await chmod(scriptPath, "755");
-
-    const result = cwd
-      ? await $`GIT_SEQUENCE_EDITOR=${scriptPath} git -C ${cwd} rebase -i ${mergeBase}`
-          .quiet()
-          .nothrow()
-      : await $`GIT_SEQUENCE_EDITOR=${scriptPath} git rebase -i ${mergeBase}`.quiet().nothrow();
-
-    if (result.exitCode !== 0) {
-      return { success: false, error: result.stderr.toString() };
-    }
-
-    return { success: true };
-  } finally {
-    try {
-      await unlink(scriptPath);
-    } catch {
-      // Ignore cleanup errors
-    }
-  }
+  return runInteractiveRebase(createRebaseScript(todoLines), mergeBase, options);
 }
 
 /**
@@ -571,7 +493,6 @@ export async function addGroupStart(
   groupTitle: string,
   options: GitOptions = {},
 ): Promise<ReorderResult> {
-  const { cwd } = options;
   const commits = await getStackCommitsWithTrailers(options);
 
   const targetCommit = commits.find((c) => c.hash === commitHash || c.hash.startsWith(commitHash));
@@ -593,38 +514,7 @@ export async function addGroupStart(
     }
   }
 
-  const scriptPath = join(tmpdir(), `taspr-add-start-${Date.now()}.sh`);
-  const script = `#!/bin/bash
-set -e
-TODO_FILE="$1"
-
-cat > "$TODO_FILE" << 'TODOEOF'
-${todoLines.join("\n")}
-TODOEOF
-`;
-
-  try {
-    await writeFile(scriptPath, script);
-    await chmod(scriptPath, "755");
-
-    const result = cwd
-      ? await $`GIT_SEQUENCE_EDITOR=${scriptPath} git -C ${cwd} rebase -i ${mergeBase}`
-          .quiet()
-          .nothrow()
-      : await $`GIT_SEQUENCE_EDITOR=${scriptPath} git rebase -i ${mergeBase}`.quiet().nothrow();
-
-    if (result.exitCode !== 0) {
-      return { success: false, error: result.stderr.toString() };
-    }
-
-    return { success: true };
-  } finally {
-    try {
-      await unlink(scriptPath);
-    } catch {
-      // Ignore cleanup errors
-    }
-  }
+  return runInteractiveRebase(createRebaseScript(todoLines), mergeBase, options);
 }
 
 /**
@@ -636,7 +526,6 @@ export async function removeGroupEnd(
   groupId: string,
   options: GitOptions = {},
 ): Promise<ReorderResult> {
-  const { cwd } = options;
   const commits = await getStackCommitsWithTrailers(options);
 
   const targetCommit = commits.find((c) => c.hash === commitHash || c.hash.startsWith(commitHash));
@@ -659,38 +548,7 @@ export async function removeGroupEnd(
     }
   }
 
-  const scriptPath = join(tmpdir(), `taspr-remove-end-${Date.now()}.sh`);
-  const script = `#!/bin/bash
-set -e
-TODO_FILE="$1"
-
-cat > "$TODO_FILE" << 'TODOEOF'
-${todoLines.join("\n")}
-TODOEOF
-`;
-
-  try {
-    await writeFile(scriptPath, script);
-    await chmod(scriptPath, "755");
-
-    const result = cwd
-      ? await $`GIT_SEQUENCE_EDITOR=${scriptPath} git -C ${cwd} rebase -i ${mergeBase}`
-          .quiet()
-          .nothrow()
-      : await $`GIT_SEQUENCE_EDITOR=${scriptPath} git rebase -i ${mergeBase}`.quiet().nothrow();
-
-    if (result.exitCode !== 0) {
-      return { success: false, error: result.stderr.toString() };
-    }
-
-    return { success: true };
-  } finally {
-    try {
-      await unlink(scriptPath);
-    } catch {
-      // Ignore cleanup errors
-    }
-  }
+  return runInteractiveRebase(createRebaseScript(todoLines), mergeBase, options);
 }
 
 /**
@@ -698,7 +556,6 @@ TODOEOF
  * Used by --fix to repair invalid group configurations.
  */
 export async function removeAllGroupTrailers(options: GitOptions = {}): Promise<ReorderResult> {
-  const { cwd } = options;
   const commits = await getStackCommitsWithTrailers(options);
 
   if (commits.length === 0) {
@@ -737,51 +594,5 @@ export async function removeAllGroupTrailers(options: GitOptions = {}): Promise<
     }
   }
 
-  const scriptPath = join(tmpdir(), `taspr-fix-${Date.now()}.sh`);
-  const script = `#!/bin/bash
-set -e
-TODO_FILE="$1"
-
-cat > "$TODO_FILE" << 'TODOEOF'
-${todoLines.join("\n")}
-TODOEOF
-`;
-
-  try {
-    await writeFile(scriptPath, script);
-    await chmod(scriptPath, "755");
-
-    const result = cwd
-      ? await $`GIT_SEQUENCE_EDITOR=${scriptPath} git -C ${cwd} rebase -i ${mergeBase}`
-          .quiet()
-          .nothrow()
-      : await $`GIT_SEQUENCE_EDITOR=${scriptPath} git rebase -i ${mergeBase}`.quiet().nothrow();
-
-    if (result.exitCode !== 0) {
-      // Check for conflict
-      const statusResult = cwd
-        ? await $`git -C ${cwd} status --porcelain`.text()
-        : await $`git status --porcelain`.text();
-
-      const conflictMatch = statusResult.match(/^(?:UU|AA|DD|AU|UA|DU|UD) (.+)$/m);
-
-      if (conflictMatch?.[1]) {
-        return {
-          success: false,
-          error: "Rebase conflict",
-          conflictFile: conflictMatch[1],
-        };
-      }
-
-      return { success: false, error: result.stderr.toString() };
-    }
-
-    return { success: true };
-  } finally {
-    try {
-      await unlink(scriptPath);
-    } catch {
-      // Ignore cleanup errors
-    }
-  }
+  return runInteractiveRebase(createRebaseScript(todoLines), mergeBase, options);
 }

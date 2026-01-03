@@ -319,4 +319,100 @@ describe("git/rebase", () => {
       expect(message).toContain("git rebase --abort");
     });
   });
+
+  describe("fixup! commit handling", () => {
+    test("injectMissingIds does not reorder fixup! commits", async () => {
+      const repo = await repos.create();
+
+      // Enable autosquash so the test is meaningful - without --no-autosquash,
+      // git would reorder fixup! commits to follow their target
+      await $`git -C ${repo.path} config rebase.autoSquash true`.quiet();
+
+      await repo.branch("feature");
+
+      // Create commits in a specific order:
+      // 1. Regular commit
+      // 2. Another regular commit
+      // 3. fixup! commit that targets commit 1
+      // Without --no-autosquash, the fixup would move to be after commit 1
+      await Bun.write(join(repo.path, "file1.txt"), "content1\n");
+      await $`git -C ${repo.path} add .`.quiet();
+      await $`git -C ${repo.path} commit -m "Add file1"`.quiet();
+
+      await Bun.write(join(repo.path, "file2.txt"), "content2\n");
+      await $`git -C ${repo.path} add .`.quiet();
+      await $`git -C ${repo.path} commit -m "Add file2"`.quiet();
+
+      await Bun.write(join(repo.path, "file1.txt"), "content1 modified\n");
+      await $`git -C ${repo.path} add .`.quiet();
+      await $`git -C ${repo.path} commit -m "fixup! Add file1"`.quiet();
+
+      // Verify initial order
+      const beforeCommits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      expect(beforeCommits).toHaveLength(3);
+      expect(beforeCommits[0]?.subject).toBe("Add file1");
+      expect(beforeCommits[1]?.subject).toBe("Add file2");
+      expect(beforeCommits[2]?.subject).toBe("fixup! Add file1");
+
+      // Inject IDs - this performs a rebase
+      const result = await injectMissingIds({ cwd: repo.path });
+      expect(result.rebasePerformed).toBe(true);
+
+      // Verify order is preserved (fixup! commit should NOT have moved)
+      const afterCommits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      expect(afterCommits).toHaveLength(3);
+      expect(afterCommits[0]?.subject).toBe("Add file1");
+      expect(afterCommits[1]?.subject).toBe("Add file2");
+      expect(afterCommits[2]?.subject).toBe("fixup! Add file1");
+
+      // Verify all have IDs now
+      expect(afterCommits[0]?.trailers["Taspr-Commit-Id"]).toMatch(/^[0-9a-f]{8}$/);
+      expect(afterCommits[1]?.trailers["Taspr-Commit-Id"]).toMatch(/^[0-9a-f]{8}$/);
+      expect(afterCommits[2]?.trailers["Taspr-Commit-Id"]).toMatch(/^[0-9a-f]{8}$/);
+    });
+
+    test("rebaseOntoMain does not reorder fixup! commits", async () => {
+      const repo = await repos.create();
+
+      // Enable autosquash so the test is meaningful
+      await $`git -C ${repo.path} config rebase.autoSquash true`.quiet();
+
+      await repo.branch("feature");
+
+      // Create commits with fixup! in the middle
+      await Bun.write(join(repo.path, "file1.txt"), "content1\n");
+      await $`git -C ${repo.path} add .`.quiet();
+      await $`git -C ${repo.path} commit -m "Add file1" --trailer "Taspr-Commit-Id: id000001"`.quiet();
+
+      await Bun.write(join(repo.path, "file1.txt"), "content1 fixed\n");
+      await $`git -C ${repo.path} add .`.quiet();
+      await $`git -C ${repo.path} commit -m "fixup! Add file1" --trailer "Taspr-Commit-Id: id000002"`.quiet();
+
+      await Bun.write(join(repo.path, "file2.txt"), "content2\n");
+      await $`git -C ${repo.path} add .`.quiet();
+      await $`git -C ${repo.path} commit -m "Add file2" --trailer "Taspr-Commit-Id: id000003"`.quiet();
+
+      // Update origin/main with non-conflicting change
+      await repo.updateOriginMain("Main update", { "main-file.txt": "main content\n" });
+      await repo.fetch();
+
+      // Verify initial order
+      const beforeCommits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      expect(beforeCommits).toHaveLength(3);
+      expect(beforeCommits[0]?.subject).toBe("Add file1");
+      expect(beforeCommits[1]?.subject).toBe("fixup! Add file1");
+      expect(beforeCommits[2]?.subject).toBe("Add file2");
+
+      // Rebase onto main
+      const result = await rebaseOntoMain({ cwd: repo.path });
+      expect(result.success).toBe(true);
+
+      // Verify order is preserved
+      const afterCommits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      expect(afterCommits).toHaveLength(3);
+      expect(afterCommits[0]?.subject).toBe("Add file1");
+      expect(afterCommits[1]?.subject).toBe("fixup! Add file1");
+      expect(afterCommits[2]?.subject).toBe("Add file2");
+    });
+  });
 });
