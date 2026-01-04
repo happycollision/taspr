@@ -5,6 +5,10 @@ import { formatValidationError } from "../cli/output.ts";
 import { applyGroupSpec, type GroupAssignment, type GroupSpec } from "../git/group-rebase.ts";
 import { predictConflict, clearFileCache } from "../git/conflict-predict.ts";
 import { readGroupTitles } from "../git/group-titles.ts";
+import { detectExistingPRs, type CommitWithPR } from "../git/pr-detection.ts";
+import { getBranchNameConfig } from "../github/branches.ts";
+import { closePR } from "../github/pr.ts";
+import { prAdoptSelect, type PRAdoptOption } from "./pr-adopt-select.ts";
 
 import {
   type TUIState,
@@ -109,6 +113,84 @@ function toCommitDisplays(
   });
 
   return { commits: displayCommits, existingGroupNames };
+}
+
+/**
+ * Prompt user to choose which PR to adopt when grouping commits with existing PRs.
+ * Returns the ID to use for the group, or null if cancelled.
+ */
+async function promptPRAdoption(
+  commitsWithPRs: CommitWithPR[],
+  groupName: string,
+): Promise<{ id: string | null; closePRs: CommitWithPR[] } | null> {
+  if (commitsWithPRs.length === 0) {
+    // No existing PRs - will generate new ID
+    return { id: null, closePRs: [] };
+  }
+
+  if (commitsWithPRs.length === 1) {
+    // Single PR exists - ask if user wants to adopt it or create new
+    const pr = commitsWithPRs[0];
+    if (!pr) {
+      return { id: null, closePRs: [] };
+    }
+    const context = `Group "${groupName}" includes a commit with an open PR`;
+
+    const options: PRAdoptOption[] = [
+      {
+        label: `Adopt PR #${pr.pr.number}: "${pr.pr.title}"`,
+        value: pr.commitId,
+        prUrl: pr.pr.url,
+      },
+      {
+        label: "Create new PR (closes existing)",
+        value: null,
+        description: `PR #${pr.pr.number} will be closed`,
+      },
+    ];
+
+    const result = await prAdoptSelect(options, "Choose PR for this group:", context);
+
+    if (result.cancelled) {
+      return null;
+    }
+
+    return {
+      id: result.adoptedId,
+      closePRs: result.adoptedId ? [] : commitsWithPRs,
+    };
+  }
+
+  // Multiple PRs exist - user must pick one to keep
+  const context = `Group "${groupName}" includes ${commitsWithPRs.length} commits with open PRs`;
+
+  const options: PRAdoptOption[] = commitsWithPRs.map((c) => ({
+    label: `Keep PR #${c.pr.number}: "${c.pr.title}"`,
+    value: c.commitId,
+    prUrl: c.pr.url,
+  }));
+
+  options.push({
+    label: "Create new PR (closes all existing)",
+    value: null,
+    description: `All ${commitsWithPRs.length} PRs will be closed`,
+  });
+
+  const result = await prAdoptSelect(options, "Choose which PR to keep:", context);
+
+  if (result.cancelled) {
+    return null;
+  }
+
+  // PRs to close are all except the adopted one
+  const closePRs = result.adoptedId
+    ? commitsWithPRs.filter((c) => c.commitId !== result.adoptedId)
+    : commitsWithPRs;
+
+  return {
+    id: result.adoptedId,
+    closePRs,
+  };
 }
 
 /**
@@ -398,15 +480,54 @@ export async function runGroupEditor(): Promise<GroupEditorResult> {
     }
   }
 
-  // Build group assignments
+  // Build group assignments with PR inheritance
   const groups: GroupAssignment[] = [];
+  const prsToClose: CommitWithPR[] = [];
+
   if (groupNames) {
+    // Get branch config for PR detection
+    const branchConfig = await getBranchNameConfig();
+
     for (const [letter, indices] of groupedCommits) {
       const name = groupNames.get(letter) || letter;
       const commitHashes = indices
         .map((i) => finalState.commits[i]?.hash)
         .filter((hash): hash is string => hash !== undefined);
-      groups.push({ commits: commitHashes, name });
+
+      // Build commit info for PR detection
+      const groupCommitInfo = indices
+        .map((i) => {
+          const commit = finalState.commits[i];
+          if (!commit) return null;
+          return {
+            hash: commit.hash,
+            commitId: commit.commitId || "",
+            subject: commit.subject,
+          };
+        })
+        .filter((c): c is { hash: string; commitId: string; subject: string } => c !== null);
+
+      // Detect existing PRs for commits in this group
+      const commitsWithPRs = await detectExistingPRs(groupCommitInfo, branchConfig);
+
+      // Prompt user to choose which PR to adopt (if any exist)
+      const adoption = await promptPRAdoption(commitsWithPRs, name);
+
+      if (adoption === null) {
+        // User cancelled
+        console.log("\nCancelled.");
+        return { changed: false };
+      }
+
+      // Track PRs that need to be closed
+      prsToClose.push(...adoption.closePRs);
+
+      // Build group assignment with optional inherited ID
+      groups.push({
+        commits: commitHashes,
+        name,
+        id: adoption.id ?? undefined,
+      });
     }
   }
 
@@ -444,6 +565,25 @@ export async function runGroupEditor(): Promise<GroupEditorResult> {
   }
 
   console.log(renderSuccess("Changes applied successfully."));
+
+  // Close PRs that were superseded by group PRs
+  if (prsToClose.length > 0) {
+    console.log(`  • Closing ${prsToClose.length} superseded PR(s)...`);
+    for (const pr of prsToClose) {
+      try {
+        await closePR(
+          pr.pr.number,
+          "This PR has been superseded by a group PR created via `taspr group`.",
+        );
+        console.log(`    - Closed PR #${pr.pr.number}: "${pr.pr.title}"`);
+      } catch (error) {
+        // Non-fatal: PR may already be closed or user may not have permissions
+        console.log(
+          `    - Warning: Could not close PR #${pr.pr.number}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
 
   // Summary
   if (orderChanged) {

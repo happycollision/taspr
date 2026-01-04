@@ -349,14 +349,37 @@ export function parseGroupSpec(json: string): GroupSpec {
   return spec;
 }
 
+export interface DissolveOptions extends GitOptions {
+  /**
+   * If specified, this commit (by hash) will be assigned the group's ID as its
+   * Taspr-Commit-Id, allowing it to inherit the group's PR association.
+   *
+   * This is only needed when the group has an open PR and you want a specific
+   * commit to keep that PR. If the commit that originally donated its ID to
+   * the group is NOT the one being assigned, it will get a new ID to avoid
+   * conflicts.
+   *
+   * If not specified, all commits keep their original IDs (safe when no PR exists).
+   */
+  assignGroupIdToCommit?: string;
+}
+
 /**
  * Dissolve a specific group by removing its trailers.
+ *
+ * When a group is dissolved:
+ * - If `assignGroupIdToCommit` is specified, that commit gets the group ID as its
+ *   Taspr-Commit-Id (inheriting the group's PR). If a different commit originally
+ *   donated its ID to the group, that commit gets a new ID to avoid conflicts.
+ * - If `assignGroupIdToCommit` is NOT specified, all commits keep their original
+ *   Taspr-Commit-Ids (the commit that donated its ID keeps it).
  */
 export async function dissolveGroup(
   groupId: string,
-  options: GitOptions = {},
+  options: DissolveOptions = {},
 ): Promise<ReorderResult> {
-  const commits = await getStackCommitsWithTrailers(options);
+  const { assignGroupIdToCommit, ...gitOptions } = options;
+  const commits = await getStackCommitsWithTrailers(gitOptions);
 
   // Find commits belonging to this group
   const groupCommits = commits.filter((c) => c.trailers["Taspr-Group"] === groupId);
@@ -365,7 +388,7 @@ export async function dissolveGroup(
     return { success: false, error: `Group ${groupId} not found` };
   }
 
-  const mergeBase = await getMergeBase(options);
+  const mergeBase = await getMergeBase(gitOptions);
 
   // Build todo with exec commands to remove group trailers
   const todoLines: string[] = [];
@@ -374,18 +397,36 @@ export async function dissolveGroup(
 
     // Check if this commit belongs to the group we're dissolving
     if (commit.trailers["Taspr-Group"] === groupId) {
-      // Remove Taspr-Group trailer (and legacy Taspr-Group-Title if present)
-      todoLines.push(
-        `exec NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group: ${groupId}$" -e "^Taspr-Group-Title:") && git commit --amend --no-edit -m "$NEW_MSG"`,
-      );
+      const commitId = commit.trailers["Taspr-Commit-Id"];
+
+      if (assignGroupIdToCommit && commit.hash === assignGroupIdToCommit) {
+        // This commit is being assigned the group ID (inheriting the PR)
+        // Remove group trailers AND set commit ID to group ID
+        todoLines.push(
+          `exec NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group: ${groupId}$" -e "^Taspr-Group-Title:" -e "^Taspr-Commit-Id:" | git interpret-trailers --trailer "Taspr-Commit-Id: ${groupId}") && git commit --amend --no-edit -m "$NEW_MSG"`,
+        );
+      } else if (assignGroupIdToCommit && commitId === groupId) {
+        // This commit originally donated its ID to the group, but a DIFFERENT
+        // commit is being assigned the group ID. Generate a new ID to avoid conflicts.
+        const newId = generateCommitId();
+        todoLines.push(
+          `exec NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group: ${groupId}$" -e "^Taspr-Group-Title:" -e "^Taspr-Commit-Id:" | git interpret-trailers --trailer "Taspr-Commit-Id: ${newId}") && git commit --amend --no-edit -m "$NEW_MSG"`,
+        );
+      } else {
+        // Just remove Taspr-Group trailer (and legacy Taspr-Group-Title if present)
+        // Keep existing Taspr-Commit-Id
+        todoLines.push(
+          `exec NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group: ${groupId}$" -e "^Taspr-Group-Title:") && git commit --amend --no-edit -m "$NEW_MSG"`,
+        );
+      }
     }
   }
 
-  const result = await runInteractiveRebase(createRebaseScript(todoLines), mergeBase, options);
+  const result = await runInteractiveRebase(createRebaseScript(todoLines), mergeBase, gitOptions);
 
   // Delete group title from ref storage if rebase succeeded
   if (result.success) {
-    await deleteGroupTitle(groupId, options);
+    await deleteGroupTitle(groupId, gitOptions);
   }
 
   return result;

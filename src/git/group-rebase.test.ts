@@ -502,6 +502,205 @@ describe("group-rebase", () => {
       expect(commits[1]!.trailers["Taspr-Group"]).toBe("group-b");
       expect(commits[1]!.trailers["Taspr-Group-Title"]).toBe("Group B");
     });
+
+    test("keeps original IDs when dissolving without assignGroupIdToCommit (no open PR)", async () => {
+      await repo.branch("feature");
+      const donorId = "donor-id-123";
+
+      // Create a group where the group ID matches a commit's Taspr-Commit-Id
+      // This simulates what happens when a group "adopts" a commit's existing PR
+      await repo.commit({
+        message: "Commit that donated ID to group",
+        trailers: {
+          "Taspr-Commit-Id": donorId,
+          "Taspr-Group": donorId, // Group ID matches commit ID = donated PR
+        },
+      });
+      await repo.commit({
+        message: "Second commit in group",
+        trailers: {
+          "Taspr-Commit-Id": "other-id-456",
+          "Taspr-Group": donorId, // Same group, different commit ID
+        },
+      });
+
+      // Verify initial state
+      let commits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      expect(commits).toHaveLength(2);
+      expect(commits[0]!.trailers["Taspr-Commit-Id"]).toBe(donorId);
+      expect(commits[0]!.trailers["Taspr-Group"]).toBe(donorId);
+      expect(commits[1]!.trailers["Taspr-Commit-Id"]).toBe("other-id-456");
+      expect(commits[1]!.trailers["Taspr-Group"]).toBe(donorId);
+
+      // Dissolve the group without specifying assignGroupIdToCommit
+      // (simulating no open PR - all commits keep their IDs)
+      const result = await dissolveGroup(donorId, { cwd: repo.path });
+      expect(result.success).toBe(true);
+
+      // Verify results after dissolve
+      commits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      expect(commits).toHaveLength(2);
+
+      // First commit (donated its ID to group) KEEPS its ID (no conflict when no PR)
+      expect(commits[0]!.trailers["Taspr-Group"]).toBeUndefined();
+      expect(commits[0]!.trailers["Taspr-Commit-Id"]).toBe(donorId); // Same ID!
+
+      // Second commit keeps its original ID
+      expect(commits[1]!.trailers["Taspr-Group"]).toBeUndefined();
+      expect(commits[1]!.trailers["Taspr-Commit-Id"]).toBe("other-id-456"); // Same ID
+    });
+
+    test("keeps Taspr-Commit-Id when dissolving a group with a different group ID", async () => {
+      await repo.branch("feature");
+
+      // Create a group where the group ID is different from all commit IDs
+      // This is the normal case - group ID was auto-generated
+      await repo.commit({
+        message: "First commit in group",
+        trailers: {
+          "Taspr-Commit-Id": "commit-id-111",
+          "Taspr-Group": "generated-group-id",
+        },
+      });
+      await repo.commit({
+        message: "Second commit in group",
+        trailers: {
+          "Taspr-Commit-Id": "commit-id-222",
+          "Taspr-Group": "generated-group-id",
+        },
+      });
+
+      // Dissolve the group
+      const result = await dissolveGroup("generated-group-id", { cwd: repo.path });
+      expect(result.success).toBe(true);
+
+      // Verify both commits keep their original IDs
+      const commits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      expect(commits).toHaveLength(2);
+
+      expect(commits[0]!.trailers["Taspr-Group"]).toBeUndefined();
+      expect(commits[0]!.trailers["Taspr-Commit-Id"]).toBe("commit-id-111"); // Same ID
+
+      expect(commits[1]!.trailers["Taspr-Group"]).toBeUndefined();
+      expect(commits[1]!.trailers["Taspr-Commit-Id"]).toBe("commit-id-222"); // Same ID
+    });
+
+    test("allows a specific commit to inherit the group ID via assignGroupIdToCommit", async () => {
+      await repo.branch("feature");
+      const groupId = "group-id-xyz";
+
+      // Create a group with two commits
+      await repo.commit({
+        message: "First commit in group",
+        trailers: {
+          "Taspr-Commit-Id": "commit-id-aaa",
+          "Taspr-Group": groupId,
+        },
+      });
+      const hash2 = await repo.commit({
+        message: "Second commit in group",
+        trailers: {
+          "Taspr-Commit-Id": "commit-id-bbb",
+          "Taspr-Group": groupId,
+        },
+      });
+
+      // Dissolve the group, specifying that the SECOND commit should be assigned the group ID
+      const result = await dissolveGroup(groupId, {
+        cwd: repo.path,
+        assignGroupIdToCommit: hash2,
+      });
+      expect(result.success).toBe(true);
+
+      // Verify the results
+      const commits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      expect(commits).toHaveLength(2);
+
+      // First commit keeps its original ID
+      expect(commits[0]!.trailers["Taspr-Group"]).toBeUndefined();
+      expect(commits[0]!.trailers["Taspr-Commit-Id"]).toBe("commit-id-aaa");
+
+      // Second commit now has the GROUP ID as its commit ID (inheriting the PR)
+      expect(commits[1]!.trailers["Taspr-Group"]).toBeUndefined();
+      expect(commits[1]!.trailers["Taspr-Commit-Id"]).toBe(groupId); // Inherited!
+    });
+
+    test("donor commit gets new ID when a different commit is assigned the group ID", async () => {
+      await repo.branch("feature");
+      const groupId = "donor-group-id";
+
+      // Create a group where first commit donated its ID (ID matches group ID)
+      await repo.commit({
+        message: "Donor commit (ID matches group)",
+        trailers: {
+          "Taspr-Commit-Id": groupId, // Same as group ID - this commit donated it
+          "Taspr-Group": groupId,
+        },
+      });
+      const hash2 = await repo.commit({
+        message: "Second commit",
+        trailers: {
+          "Taspr-Commit-Id": "other-id-456",
+          "Taspr-Group": groupId,
+        },
+      });
+
+      // Dissolve, assigning the group ID to the SECOND commit (not the donor)
+      const result = await dissolveGroup(groupId, {
+        cwd: repo.path,
+        assignGroupIdToCommit: hash2,
+      });
+      expect(result.success).toBe(true);
+
+      // Verify results
+      const commits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      expect(commits).toHaveLength(2);
+
+      // First commit (donor) gets a NEW ID because second commit is taking the group ID
+      expect(commits[0]!.trailers["Taspr-Commit-Id"]).toBeDefined();
+      expect(commits[0]!.trailers["Taspr-Commit-Id"]).not.toBe(groupId); // New ID!
+
+      // Second commit now has the group ID (inherits the PR)
+      expect(commits[1]!.trailers["Taspr-Commit-Id"]).toBe(groupId);
+    });
+
+    test("donor commit keeps its ID when it is assigned the group ID", async () => {
+      await repo.branch("feature");
+      const groupId = "shared-id-123";
+
+      // Create a group where first commit's ID matches the group ID
+      const hash1 = await repo.commit({
+        message: "First commit (ID matches group)",
+        trailers: {
+          "Taspr-Commit-Id": groupId, // Same as group ID
+          "Taspr-Group": groupId,
+        },
+      });
+      await repo.commit({
+        message: "Second commit",
+        trailers: {
+          "Taspr-Commit-Id": "other-id-456",
+          "Taspr-Group": groupId,
+        },
+      });
+
+      // Dissolve, assigning the group ID to the donor commit (no change needed)
+      const result = await dissolveGroup(groupId, {
+        cwd: repo.path,
+        assignGroupIdToCommit: hash1,
+      });
+      expect(result.success).toBe(true);
+
+      // Verify results
+      const commits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      expect(commits).toHaveLength(2);
+
+      // First commit keeps the group ID (it was already its ID)
+      expect(commits[0]!.trailers["Taspr-Commit-Id"]).toBe(groupId);
+
+      // Second commit keeps its original ID
+      expect(commits[1]!.trailers["Taspr-Commit-Id"]).toBe("other-id-456");
+    });
   });
 
   describe("addGroupTrailers", () => {

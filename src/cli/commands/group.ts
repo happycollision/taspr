@@ -11,9 +11,12 @@ import { parseStack } from "../../core/stack.ts";
 import { formatValidationError } from "../output.ts";
 import { multiSelect } from "../../tui/multi-select.ts";
 import { repairSelect } from "../../tui/repair-select.ts";
+import { prAdoptSelect, type PRAdoptOption } from "../../tui/pr-adopt-select.ts";
 import { isTTY } from "../../tui/terminal.ts";
 import type { PRUnit, StackParseResult } from "../../types.ts";
 import { readGroupTitles } from "../../git/group-titles.ts";
+import { findPRByBranch } from "../../github/pr.ts";
+import { getBranchNameConfig, getBranchName } from "../../github/branches.ts";
 
 export interface GroupCommandOptions {
   apply?: string;
@@ -93,11 +96,23 @@ async function applyCommand(json: string): Promise<void> {
   }
 }
 
+export interface DissolveCommandOptions {
+  /**
+   * Commit to inherit the group's PR.
+   * Can be a commit hash, short hash, or 1-based index into the group.
+   * Set to `false` (via --no-inherit) to explicitly not inherit.
+   */
+  inherit?: string | boolean;
+}
+
 /**
  * Dissolve a group by removing its trailers.
  * If no groupId is provided, shows an interactive multi-select.
  */
-export async function dissolveCommand(groupId?: string): Promise<void> {
+export async function dissolveCommand(
+  groupId?: string,
+  options: DissolveCommandOptions = {},
+): Promise<void> {
   // Get current stack
   const commits = await getStackCommitsWithTrailers();
 
@@ -135,7 +150,7 @@ export async function dissolveCommand(groupId?: string): Promise<void> {
       process.exit(1);
     }
 
-    await dissolveSingleGroup(targetGroup);
+    await dissolveSingleGroup(targetGroup, options);
     return;
   }
 
@@ -152,13 +167,13 @@ export async function dissolveCommand(groupId?: string): Promise<void> {
   }
 
   // Interactive multi-select
-  const options = groups.map((g) => ({
+  const selectOptions = groups.map((g) => ({
     label: `"${g.title}"`,
     value: g,
     hint: `${g.commits.length} commit${g.commits.length === 1 ? "" : "s"}`,
   }));
 
-  const result = await multiSelect(options, "Select groups to dissolve:");
+  const result = await multiSelect(selectOptions, "Select groups to dissolve:");
 
   if (result.cancelled || result.selected.length === 0) {
     console.log("No groups selected.");
@@ -167,17 +182,123 @@ export async function dissolveCommand(groupId?: string): Promise<void> {
 
   // Dissolve selected groups
   for (const group of result.selected) {
-    await dissolveSingleGroup(group);
+    await dissolveSingleGroup(group, options);
   }
 }
 
 /**
- * Dissolve a single group.
+ * Resolve the --inherit option to a commit hash.
+ * Accepts: commit hash, short hash, or 1-based index into the group.
  */
-async function dissolveSingleGroup(group: PRUnit): Promise<void> {
+function resolveInheritOption(
+  inheritOption: string,
+  groupCommits: Array<{ hash: string; subject: string }>,
+): string | null {
+  // Try as 1-based index first
+  const index = parseInt(inheritOption, 10);
+  if (!isNaN(index) && index >= 1 && index <= groupCommits.length) {
+    const commit = groupCommits[index - 1];
+    return commit?.hash ?? null;
+  }
+
+  // Try as commit hash (full or short)
+  const matchingCommit = groupCommits.find(
+    (c) => c.hash === inheritOption || c.hash.startsWith(inheritOption),
+  );
+  return matchingCommit?.hash ?? null;
+}
+
+/**
+ * Dissolve a single group.
+ * If the group has an open PR:
+ * - Interactive mode: prompts user to choose which commit should inherit it
+ * - Non-interactive mode: requires --inherit or --no-inherit flag
+ */
+async function dissolveSingleGroup(
+  group: PRUnit,
+  options: DissolveCommandOptions = {},
+): Promise<void> {
+  // Check if this group has an open PR
+  const branchConfig = await getBranchNameConfig();
+  const branchName = getBranchName(group.id, branchConfig);
+  const pr = await findPRByBranch(branchName);
+
+  let assignGroupIdToCommit: string | undefined;
+
+  if (pr?.state === "OPEN" && group.commits.length > 0) {
+    // Group has an open PR - determine which commit should inherit it
+    const commits = await getStackCommitsWithTrailers();
+    const groupCommits = commits.filter((c) => group.commits.includes(c.hash));
+
+    // Check if --inherit or --no-inherit was provided
+    if (options.inherit === false) {
+      // Explicit --no-inherit: don't inherit to any commit
+      assignGroupIdToCommit = undefined;
+    } else if (typeof options.inherit === "string") {
+      // --inherit <commit> provided
+      const resolved = resolveInheritOption(options.inherit, groupCommits);
+      if (!resolved) {
+        console.error(`Error: Could not resolve "${options.inherit}" to a commit in this group.`);
+        console.error("");
+        console.error("Commits in this group:");
+        groupCommits.forEach((c, i) => {
+          console.error(`  ${i + 1}. ${c.hash.slice(0, 8)} "${c.subject}"`);
+        });
+        process.exit(1);
+      }
+      assignGroupIdToCommit = resolved;
+    } else if (isTTY()) {
+      // Interactive mode - ask user
+      const context = `Group "${group.title}" has an open PR #${pr.number}`;
+
+      const selectOptions: PRAdoptOption[] = groupCommits.map((c, i) => ({
+        label: `${i + 1}. "${c.subject}"`,
+        value: c.hash,
+        description: c.hash.slice(0, 8),
+      }));
+
+      selectOptions.push({
+        label: "Don't inherit (PR becomes orphaned)",
+        value: null,
+        description: "No commit will inherit the PR",
+      });
+
+      const result = await prAdoptSelect(
+        selectOptions,
+        "Which commit should inherit the PR?",
+        context,
+      );
+
+      if (result.cancelled) {
+        console.log("Cancelled.");
+        return;
+      }
+
+      assignGroupIdToCommit = result.adoptedId ?? undefined;
+    } else {
+      // Non-interactive mode without --inherit flag - error out
+      console.error(`Error: Group "${group.title}" has an open PR #${pr.number}.`);
+      console.error("");
+      console.error("In non-interactive mode, you must specify which commit inherits the PR:");
+      console.error("");
+      console.error("Commits in this group:");
+      groupCommits.forEach((c, i) => {
+        console.error(`  ${i + 1}. ${c.hash.slice(0, 8)} "${c.subject}"`);
+      });
+      console.error("");
+      console.error("Options:");
+      console.error(
+        `  --inherit <N>       Commit index (1-${groupCommits.length}) inherits the PR`,
+      );
+      console.error("  --inherit <hash>    Commit by hash inherits the PR");
+      console.error("  --no-inherit        Don't inherit PR to any commit");
+      process.exit(1);
+    }
+  }
+
   console.log(`Dissolving group "${group.title}" (${group.id})...`);
 
-  const result = await dissolveGroup(group.id);
+  const result = await dissolveGroup(group.id, { assignGroupIdToCommit });
 
   if (!result.success) {
     console.log(`Error: ${result.error}`);
@@ -185,6 +306,9 @@ async function dissolveSingleGroup(group: PRUnit): Promise<void> {
   }
 
   console.log(`✓ Group "${group.title}" dissolved.`);
+  if (assignGroupIdToCommit) {
+    console.log(`  PR #${pr?.number} inherited by commit ${assignGroupIdToCommit.slice(0, 8)}`);
+  }
 }
 
 /**

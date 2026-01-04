@@ -53,6 +53,13 @@ groupCmd
   .command("dissolve")
   .description("Remove group trailers from commits")
   .argument("[group-id]", "ID of the group to dissolve (optional, lists groups if omitted)")
-  .action((groupId?: string) => dissolveCommand(groupId));
+  .option(
+    "--inherit <commit>",
+    "Commit (hash or index 1-N) to inherit the group's PR when dissolving",
+  )
+  .option("--no-inherit", "Explicitly don't inherit the PR to any commit")
+  .action((groupId: string | undefined, options: { inherit?: string | boolean }) =>
+    dissolveCommand(groupId, options),
+  );
 
 program.parse();

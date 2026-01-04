@@ -491,6 +491,29 @@ export async function retargetPR(prNumber: number, newBase: string): Promise<voi
 }
 
 /**
+ * Close a PR without merging it.
+ * Used when grouping commits causes a PR to be superseded by a group PR.
+ */
+export async function closePR(prNumber: number, comment?: string): Promise<void> {
+  await ensureGhInstalled();
+
+  // Add a comment explaining why the PR is being closed (if provided)
+  if (comment) {
+    await $`gh pr comment ${prNumber} --body ${comment}`.quiet().nothrow();
+  }
+
+  const result = await $`gh pr close ${prNumber}`.quiet().nothrow();
+
+  if (result.exitCode !== 0) {
+    const stderr = result.stderr.toString();
+    if (stderr.includes("not found") || stderr.includes("Could not resolve")) {
+      throw new PRNotFoundError(prNumber);
+    }
+    throw new Error(`Failed to close PR #${prNumber}: ${stderr}`);
+  }
+}
+
+/**
  * Get the current state of a PR.
  */
 export async function getPRState(prNumber: number): Promise<"OPEN" | "CLOSED" | "MERGED"> {
