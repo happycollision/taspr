@@ -160,39 +160,40 @@ export function formatValidationError(result: Exclude<StackParseResult, { ok: tr
   const lines: string[] = [];
 
   switch (result.error) {
-    case "unclosed-group":
-      lines.push(`✗ Error: Unclosed group starting at commit ${result.startCommit.slice(0, 8)}`);
+    case "split-group": {
+      const commitList = result.group.commits.map((h) => h.slice(0, 8)).join(", ");
+      lines.push(`✗ Error: Split group detected`);
       lines.push("");
-      lines.push(`  Group ${result.groupId} ("${result.groupTitle}") has Taspr-Group-Start but no`);
-      lines.push("  matching Taspr-Group-End was found in subsequent commits.");
-      lines.push("");
-      lines.push("  To fix, run `taspr group --fix` to repair the group boundaries.");
-      break;
-
-    case "overlapping-groups":
-      lines.push("✗ Error: Overlapping groups detected");
-      lines.push("");
-      lines.push(`  Group "${result.group1.title}" (${result.group1.id}):`);
-      lines.push(`    starts at ${result.group1.startCommit.slice(0, 8)}`);
-      lines.push("");
-      lines.push(`  Group "${result.group2.title}" (${result.group2.id}):`);
       lines.push(
-        `    starts at ${result.group2.startCommit.slice(0, 8)} (inside "${result.group1.title}")`,
+        `  Group "${result.group.title}" (${result.group.id.slice(0, 8)}) has non-contiguous commits.`,
       );
+      lines.push(`  Commits: [${commitList}]`);
       lines.push("");
-      lines.push("  To fix, run `taspr group --fix` to repair the group boundaries.");
+      lines.push(`  ${result.interruptingCommits.length} commit(s) appear between group members:`);
+      for (const hash of result.interruptingCommits) {
+        lines.push(`    - ${hash.slice(0, 8)}`);
+      }
+      lines.push("");
+      lines.push("  This can happen when fixup! commits are squashed into a group.");
+      lines.push("  To fix, run `taspr group --fix` to merge or dissolve the group.");
       break;
+    }
 
-    case "orphan-group-end":
+    case "inconsistent-group-title": {
+      const uniqueTitles = [...new Set(result.titles.values())];
+      lines.push(`✗ Error: Inconsistent group titles detected`);
+      lines.push("");
       lines.push(
-        `✗ Error: Group end without matching start at commit ${result.commit.slice(0, 8)}`,
+        `  Group ${result.groupId.slice(0, 8)} has different titles on different commits:`,
       );
+      for (const title of uniqueTitles) {
+        lines.push(`    - "${title}"`);
+      }
       lines.push("");
-      lines.push(`  Found Taspr-Group-End: ${result.groupId} but no matching`);
-      lines.push("  Taspr-Group-Start was found in preceding commits.");
-      lines.push("");
-      lines.push("  To fix, run `taspr group --fix` to repair the group boundaries.");
+      lines.push("  All commits in a group should have the same Taspr-Group-Title.");
+      lines.push("  To fix, run `taspr group --fix` to normalize the titles.");
       break;
+    }
   }
 
   return lines.join("\n");

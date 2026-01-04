@@ -26,15 +26,30 @@ describe("cli/commands/land", () => {
     expect(result.stdout).toContain("No open PRs in stack");
   });
 
-  test("handles validation error for unclosed group", async () => {
+  test("handles validation error for split group", async () => {
     const repo = await repos.create();
     await repo.branch("feature");
 
-    // Create a group start without a corresponding end
+    // Create a split group (non-contiguous commits with same Taspr-Group)
     await repo.commit({
+      message: "Group commit 1",
+      trailers: {
+        "Taspr-Commit-Id": "id111111",
+        "Taspr-Group": "grp1",
+        "Taspr-Group-Title": "My Group",
+      },
+    });
+    await repo.commit({
+      message: "Interrupting commit",
+      trailers: {
+        "Taspr-Commit-Id": "id222222",
+      },
+    });
+    await repo.commit({
+      message: "Group commit 2",
       trailers: {
         "Taspr-Commit-Id": "id333333",
-        "Taspr-Group-Start": "grp1",
+        "Taspr-Group": "grp1",
         "Taspr-Group-Title": "My Group",
       },
     });
@@ -42,7 +57,7 @@ describe("cli/commands/land", () => {
     const result = await runLand(repo.path);
 
     expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain("Unclosed group");
+    expect(result.stderr).toContain("Split group");
   });
 
   // GitHub integration tests for landing are in tests/integration/land.test.ts

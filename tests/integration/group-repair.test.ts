@@ -3,10 +3,10 @@ import { $ } from "bun";
 import { repoManager } from "../helpers/local-repo.ts";
 import { scenarios } from "../../src/scenario/definitions.ts";
 import {
-  addGroupEnd,
-  removeGroupStart,
-  addGroupStart,
-  removeGroupEnd,
+  addGroupTrailers,
+  removeGroupTrailers,
+  updateGroupTitle,
+  mergeSplitGroup,
 } from "../../src/git/group-rebase.ts";
 import { getStackCommitsWithTrailers } from "../../src/git/commands.ts";
 import { parseStack } from "../../src/core/stack.ts";
@@ -21,127 +21,117 @@ async function getCommitTrailers(cwd: string, count: number): Promise<string> {
 describe("targeted group repair functions", () => {
   const repos = repoManager();
 
-  describe("addGroupEnd", () => {
-    test("adds Taspr-Group-End to close an unclosed group", async () => {
+  describe("addGroupTrailers", () => {
+    test("adds Taspr-Group and Taspr-Group-Title to a commit", async () => {
       const repo = await repos.create();
-      await scenarios.unclosedGroup.setup(repo);
+      await scenarios.multiCommitStack.setup(repo);
 
-      // Get commits and find the group info
+      // Get commits
       const commits = await getStackCommitsWithTrailers({ cwd: repo.path });
-      const lastCommit = commits[commits.length - 1];
-      expect(lastCommit).toBeDefined();
-
-      // Find the group ID from the start commit
-      const startCommit = commits.find((c) => c.trailers["Taspr-Group-Start"]);
-      expect(startCommit).toBeDefined();
-      const groupId = startCommit!.trailers["Taspr-Group-Start"];
-      expect(groupId).toBeDefined();
-
-      // Add group end to the last commit
-      const result = await addGroupEnd(lastCommit!.hash, groupId!, { cwd: repo.path });
-      expect(result.success).toBe(true);
-
-      // Verify the group is now closed
-      const afterTrailers = await getCommitTrailers(repo.path, 2);
-      expect(afterTrailers).toContain(`Taspr-Group-End: ${groupId}`);
-
-      // Verify stack is now valid
-      const newCommits = await getStackCommitsWithTrailers({ cwd: repo.path });
-      const validation = parseStack(newCommits);
-      expect(validation.ok).toBe(true);
-    });
-  });
-
-  describe("removeGroupStart", () => {
-    test("removes Taspr-Group-Start and Title from an unclosed group", async () => {
-      const repo = await repos.create();
-      await scenarios.unclosedGroup.setup(repo);
-
-      // Get commits and find the group info
-      const commits = await getStackCommitsWithTrailers({ cwd: repo.path });
-      const startCommit = commits.find((c) => c.trailers["Taspr-Group-Start"]);
-      expect(startCommit).toBeDefined();
-      const groupId = startCommit!.trailers["Taspr-Group-Start"];
-      expect(groupId).toBeDefined();
-
-      // Remove the group start
-      const result = await removeGroupStart(startCommit!.hash, groupId!, { cwd: repo.path });
-      expect(result.success).toBe(true);
-
-      // Verify group trailers are removed
-      const afterTrailers = await getCommitTrailers(repo.path, 2);
-      expect(afterTrailers).not.toContain("Taspr-Group-Start");
-      expect(afterTrailers).not.toContain("Taspr-Group-Title");
-      // Commit IDs should still be there
-      expect(afterTrailers).toContain("Taspr-Commit-Id");
-
-      // Verify stack is now valid
-      const newCommits = await getStackCommitsWithTrailers({ cwd: repo.path });
-      const validation = parseStack(newCommits);
-      expect(validation.ok).toBe(true);
-    });
-  });
-
-  describe("addGroupStart", () => {
-    test("adds Taspr-Group-Start to fix an orphan group end", async () => {
-      const repo = await repos.create();
-      await scenarios.orphanGroupEnd.setup(repo);
-
-      // Get commits and find the orphan end
-      const commits = await getStackCommitsWithTrailers({ cwd: repo.path });
-      const endCommit = commits.find((c) => c.trailers["Taspr-Group-End"]);
-      expect(endCommit).toBeDefined();
-      const groupId = endCommit!.trailers["Taspr-Group-End"];
-      expect(groupId).toBeDefined();
-
-      // Pick the first commit to be the start
       const firstCommit = commits[0];
       expect(firstCommit).toBeDefined();
 
-      // Add group start to the first commit
-      const result = await addGroupStart(firstCommit!.hash, groupId!, "Fixed Group", {
+      // Add group trailers to the first commit
+      const result = await addGroupTrailers(
+        firstCommit!.hash,
+        "test-group-id",
+        "Test Group Title",
+        { cwd: repo.path },
+      );
+      expect(result.success).toBe(true);
+
+      // Verify the trailers were added
+      const afterTrailers = await getCommitTrailers(repo.path, 3);
+      expect(afterTrailers).toContain("Taspr-Group: test-group-id");
+      expect(afterTrailers).toContain("Taspr-Group-Title: Test Group Title");
+    });
+  });
+
+  describe("removeGroupTrailers", () => {
+    test("removes Taspr-Group and Taspr-Group-Title from a commit", async () => {
+      const repo = await repos.create();
+      await scenarios.withGroups.setup(repo);
+
+      // Get commits and find one with group trailers
+      const commits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      const groupCommit = commits.find((c) => c.trailers["Taspr-Group"]);
+      expect(groupCommit).toBeDefined();
+      const groupId = groupCommit!.trailers["Taspr-Group"];
+      expect(groupId).toBeDefined();
+
+      // Remove the group trailers
+      const result = await removeGroupTrailers(groupCommit!.hash, groupId!, { cwd: repo.path });
+      expect(result.success).toBe(true);
+
+      // Verify group trailers were removed from that commit
+      const newCommits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      const updatedCommit = newCommits.find(
+        (c) => c.subject === groupCommit!.subject && !c.trailers["Taspr-Group"],
+      );
+      expect(updatedCommit).toBeDefined();
+      // Commit IDs should still be there
+      expect(updatedCommit!.trailers["Taspr-Commit-Id"]).toBeDefined();
+    });
+  });
+
+  describe("updateGroupTitle", () => {
+    test("updates Taspr-Group-Title on a commit", async () => {
+      const repo = await repos.create();
+      await scenarios.inconsistentGroupTitle.setup(repo);
+
+      // Get commits
+      const commits = await getStackCommitsWithTrailers({ cwd: repo.path });
+      const commitWithTitleA = commits.find((c) => c.trailers["Taspr-Group-Title"] === "Title A");
+      expect(commitWithTitleA).toBeDefined();
+
+      // Update the title
+      const result = await updateGroupTitle(commitWithTitleA!.hash, "Title A", "Unified Title", {
         cwd: repo.path,
       });
       expect(result.success).toBe(true);
 
-      // Verify the group start was added
-      const afterTrailers = await getCommitTrailers(repo.path, 3);
-      expect(afterTrailers).toContain(`Taspr-Group-Start: ${groupId}`);
-      expect(afterTrailers).toContain("Taspr-Group-Title: Fixed Group");
-
-      // Verify stack is now valid
+      // Verify the title was updated
       const newCommits = await getStackCommitsWithTrailers({ cwd: repo.path });
-      const validation = parseStack(newCommits);
-      expect(validation.ok).toBe(true);
+      const updatedCommit = newCommits.find(
+        (c) => c.trailers["Taspr-Group-Title"] === "Unified Title",
+      );
+      expect(updatedCommit).toBeDefined();
     });
   });
 
-  describe("removeGroupEnd", () => {
-    test("removes orphan Taspr-Group-End", async () => {
+  describe("mergeSplitGroup", () => {
+    test("reorders commits to merge a split group", async () => {
       const repo = await repos.create();
-      await scenarios.orphanGroupEnd.setup(repo);
+      await scenarios.splitGroup.setup(repo);
 
-      // Get commits and find the orphan end
-      const commits = await getStackCommitsWithTrailers({ cwd: repo.path });
-      const endCommit = commits.find((c) => c.trailers["Taspr-Group-End"]);
-      expect(endCommit).toBeDefined();
-      const groupId = endCommit!.trailers["Taspr-Group-End"];
-      expect(groupId).toBeDefined();
+      // Verify the stack is initially invalid (split group)
+      const commitsBefore = await getStackCommitsWithTrailers({ cwd: repo.path });
+      const validationBefore = parseStack(commitsBefore);
+      expect(validationBefore.ok).toBe(false);
+      if (!validationBefore.ok) {
+        expect(validationBefore.error).toBe("split-group");
+      }
 
-      // Remove the orphan group end
-      const result = await removeGroupEnd(endCommit!.hash, groupId!, { cwd: repo.path });
+      // Merge the split group
+      const result = await mergeSplitGroup("group-split", { cwd: repo.path });
       expect(result.success).toBe(true);
 
-      // Verify the group end was removed
-      const afterTrailers = await getCommitTrailers(repo.path, 3);
-      expect(afterTrailers).not.toContain("Taspr-Group-End");
-      // Commit IDs should still be there
-      expect(afterTrailers).toContain("Taspr-Commit-Id");
+      // Verify the stack is now valid
+      const commitsAfter = await getStackCommitsWithTrailers({ cwd: repo.path });
+      const validationAfter = parseStack(commitsAfter);
+      expect(validationAfter.ok).toBe(true);
 
-      // Verify stack is now valid
-      const newCommits = await getStackCommitsWithTrailers({ cwd: repo.path });
-      const validation = parseStack(newCommits);
-      expect(validation.ok).toBe(true);
+      // Verify the group commits are now contiguous and ID is preserved
+      if (validationAfter.ok) {
+        // Group ID must be preserved (critical for branch/PR stability)
+        const groupUnit = validationAfter.units.find(
+          (u) => u.type === "group" && u.id === "group-split",
+        );
+        expect(groupUnit).toBeDefined();
+        expect(groupUnit!.id).toBe("group-split");
+        expect(groupUnit!.title).toBe("Split Group");
+        expect(groupUnit!.commits).toHaveLength(2);
+      }
     });
   });
 });

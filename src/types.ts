@@ -32,18 +32,23 @@ export interface EnrichedPRUnit extends PRUnit {
 export interface GroupInfo {
   id: string;
   title: string;
-  startCommit: string;
-  endCommit?: string;
+  commits: string[];
 }
 
 export type StackParseResult =
   | { ok: true; units: PRUnit[] }
-  | { ok: false; error: "unclosed-group"; groupId: string; startCommit: string; groupTitle: string }
   | {
       ok: false;
-      error: "overlapping-groups";
-      group1: GroupInfo;
-      group2: GroupInfo;
-      overlappingCommit: string;
+      error: "split-group";
+      /** The group that has non-contiguous commits */
+      group: GroupInfo;
+      /** Commits that appear between the split parts */
+      interruptingCommits: string[];
     }
-  | { ok: false; error: "orphan-group-end"; groupId: string; commit: string };
+  | {
+      ok: false;
+      error: "inconsistent-group-title";
+      groupId: string;
+      /** Map of commit hash to its title */
+      titles: Map<string, string>;
+    };

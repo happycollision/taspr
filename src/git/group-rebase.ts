@@ -83,6 +83,8 @@ export interface GroupAssignment {
   commits: string[];
   /** User-provided group name */
   name: string;
+  /** Optional existing group ID to preserve (for repair operations) */
+  id?: string;
 }
 
 export interface GroupSpec {
@@ -163,6 +165,7 @@ export async function applyGroupSpec(
   // Resolve group commit references to full hashes
   const resolvedGroups: GroupAssignment[] = spec.groups.map((g) => ({
     name: g.name,
+    id: g.id, // Preserve existing ID if provided
     commits: g.commits.map((ref) => {
       const resolved = idToHash.get(ref);
       if (!resolved) {
@@ -202,37 +205,20 @@ export async function applyGroupSpec(
   const trailerMap = new Map<string, Record<string, string>>();
 
   for (const group of resolvedGroups) {
-    const firstCommit = group.commits[0];
-    const lastCommit = group.commits[group.commits.length - 1];
-
-    if (!firstCommit || !lastCommit) {
+    if (group.commits.length === 0) {
       continue;
     }
 
-    const groupId = generateCommitId();
+    // Use existing ID if provided (for repair operations), otherwise generate new
+    const groupId = group.id ?? generateCommitId();
 
-    if (firstCommit === lastCommit) {
-      // Single-commit group
-      const existing = trailerMap.get(firstCommit) ?? {};
-      trailerMap.set(firstCommit, {
+    // Add Taspr-Group and Taspr-Group-Title to ALL commits in the group
+    for (const commitHash of group.commits) {
+      const existing = trailerMap.get(commitHash) ?? {};
+      trailerMap.set(commitHash, {
         ...existing,
-        "Taspr-Group-Start": groupId,
+        "Taspr-Group": groupId,
         "Taspr-Group-Title": group.name,
-        "Taspr-Group-End": groupId,
-      });
-    } else {
-      // Multi-commit group
-      const existingFirst = trailerMap.get(firstCommit) ?? {};
-      trailerMap.set(firstCommit, {
-        ...existingFirst,
-        "Taspr-Group-Start": groupId,
-        "Taspr-Group-Title": group.name,
-      });
-
-      const existingLast = trailerMap.get(lastCommit) ?? {};
-      trailerMap.set(lastCommit, {
-        ...existingLast,
-        "Taspr-Group-End": groupId,
       });
     }
   }
@@ -240,11 +226,7 @@ export async function applyGroupSpec(
   // Check which commits currently have group trailers (to remove them)
   const commitsWithGroupTrailers = new Set<string>();
   for (const commit of commits) {
-    if (
-      commit.trailers["Taspr-Group-Start"] ||
-      commit.trailers["Taspr-Group-End"] ||
-      commit.trailers["Taspr-Group-Title"]
-    ) {
+    if (commit.trailers["Taspr-Group"] || commit.trailers["Taspr-Group-Title"]) {
       commitsWithGroupTrailers.add(commit.hash);
     }
   }
@@ -275,8 +257,8 @@ export async function applyGroupSpec(
       // Then, add new trailers if any
       let cmd = "NEW_MSG=$(git log -1 --format=%B";
 
-      // Always strip existing group trailers first
-      cmd += ' | grep -v "^Taspr-Group-"';
+      // Always strip existing group trailers first (Taspr-Group: and Taspr-Group-Title:)
+      cmd += ' | grep -v -e "^Taspr-Group:" -e "^Taspr-Group-Title:"';
 
       // Then add new trailers if specified
       if (newTrailers) {
@@ -353,9 +335,7 @@ export async function dissolveGroup(
   const commits = await getStackCommitsWithTrailers(options);
 
   // Find commits belonging to this group
-  const groupCommits = commits.filter(
-    (c) => c.trailers["Taspr-Group-Start"] === groupId || c.trailers["Taspr-Group-End"] === groupId,
-  );
+  const groupCommits = commits.filter((c) => c.trailers["Taspr-Group"] === groupId);
 
   if (groupCommits.length === 0) {
     return { success: false, error: `Group ${groupId} not found` };
@@ -369,22 +349,12 @@ export async function dissolveGroup(
     todoLines.push(`pick ${commit.hash}`);
 
     // Check if this commit belongs to the group we're dissolving
-    const isGroupStart = commit.trailers["Taspr-Group-Start"] === groupId;
-    const isGroupEnd = commit.trailers["Taspr-Group-End"] === groupId;
-
-    if (isGroupStart || isGroupEnd) {
-      // Build a list of specific trailers to remove for this group only
-      const trailersToRemove: string[] = [];
-      if (isGroupStart) {
-        trailersToRemove.push(`Taspr-Group-Start: ${groupId}`);
-        // Title is always on the start commit
-        const title = commit.trailers["Taspr-Group-Title"];
-        if (title) {
-          trailersToRemove.push(`Taspr-Group-Title: ${title}`);
-        }
-      }
-      if (isGroupEnd) {
-        trailersToRemove.push(`Taspr-Group-End: ${groupId}`);
+    if (commit.trailers["Taspr-Group"] === groupId) {
+      // Remove Taspr-Group and Taspr-Group-Title trailers for this group
+      const trailersToRemove: string[] = [`Taspr-Group: ${groupId}`];
+      const title = commit.trailers["Taspr-Group-Title"];
+      if (title) {
+        trailersToRemove.push(`Taspr-Group-Title: ${title}`);
       }
 
       // Use grep -v with exact patterns to remove only the specific trailers
@@ -411,83 +381,10 @@ export async function abortRebase(options: GitOptions = {}): Promise<void> {
 }
 
 /**
- * Add a Taspr-Group-End trailer to a specific commit.
- * Used to close an unclosed group.
+ * Add group trailers to a commit (used for fixing split groups).
+ * Adds both Taspr-Group and Taspr-Group-Title.
  */
-export async function addGroupEnd(
-  commitHash: string,
-  groupId: string,
-  options: GitOptions = {},
-): Promise<ReorderResult> {
-  const commits = await getStackCommitsWithTrailers(options);
-
-  const targetCommit = commits.find((c) => c.hash === commitHash || c.hash.startsWith(commitHash));
-  if (!targetCommit) {
-    return { success: false, error: `Commit ${commitHash} not found in stack` };
-  }
-
-  const mergeBase = await getMergeBase(options);
-
-  // Build todo with exec command to add the trailer
-  const todoLines: string[] = [];
-  for (const commit of commits) {
-    todoLines.push(`pick ${commit.hash}`);
-
-    if (commit.hash === targetCommit.hash) {
-      // Add Taspr-Group-End trailer
-      const cmd = `NEW_MSG=$(git log -1 --format=%B | git interpret-trailers --trailer "Taspr-Group-End: ${groupId}") && git commit --amend --no-edit -m "$NEW_MSG"`;
-      todoLines.push(`exec ${cmd}`);
-    }
-  }
-
-  return runInteractiveRebase(createRebaseScript(todoLines), mergeBase, options);
-}
-
-/**
- * Remove Taspr-Group-Start and Taspr-Group-Title trailers from a specific commit.
- * Used to remove the start marker of an unclosed group.
- */
-export async function removeGroupStart(
-  commitHash: string,
-  groupId: string,
-  options: GitOptions = {},
-): Promise<ReorderResult> {
-  const commits = await getStackCommitsWithTrailers(options);
-
-  const targetCommit = commits.find((c) => c.hash === commitHash || c.hash.startsWith(commitHash));
-  if (!targetCommit) {
-    return { success: false, error: `Commit ${commitHash} not found in stack` };
-  }
-
-  const mergeBase = await getMergeBase(options);
-
-  // Build todo with exec command to remove the trailers
-  const todoLines: string[] = [];
-  for (const commit of commits) {
-    todoLines.push(`pick ${commit.hash}`);
-
-    if (commit.hash === targetCommit.hash) {
-      // Remove Taspr-Group-Start and Taspr-Group-Title for this group
-      const trailersToRemove: string[] = [`Taspr-Group-Start: ${groupId}`];
-      const title = commit.trailers["Taspr-Group-Title"];
-      if (title) {
-        trailersToRemove.push(`Taspr-Group-Title: ${title}`);
-      }
-      const grepPatterns = trailersToRemove.map((t) => `-e "^${t}$"`).join(" ");
-      todoLines.push(
-        `exec NEW_MSG=$(git log -1 --format=%B | grep -v ${grepPatterns}) && git commit --amend --no-edit -m "$NEW_MSG"`,
-      );
-    }
-  }
-
-  return runInteractiveRebase(createRebaseScript(todoLines), mergeBase, options);
-}
-
-/**
- * Add Taspr-Group-Start and Taspr-Group-Title trailers to a specific commit.
- * Used to add a start marker for an orphan group end.
- */
-export async function addGroupStart(
+export async function addGroupTrailers(
   commitHash: string,
   groupId: string,
   groupTitle: string,
@@ -508,8 +405,8 @@ export async function addGroupStart(
     todoLines.push(`pick ${commit.hash}`);
 
     if (commit.hash === targetCommit.hash) {
-      // Add Taspr-Group-Start and Taspr-Group-Title trailers
-      const cmd = `NEW_MSG=$(git log -1 --format=%B | git interpret-trailers --trailer "Taspr-Group-Start: ${groupId}" --trailer "Taspr-Group-Title: ${groupTitle}") && git commit --amend --no-edit -m "$NEW_MSG"`;
+      // Add Taspr-Group and Taspr-Group-Title trailers
+      const cmd = `NEW_MSG=$(git log -1 --format=%B | git interpret-trailers --trailer "Taspr-Group: ${groupId}" --trailer "Taspr-Group-Title: ${groupTitle}") && git commit --amend --no-edit -m "$NEW_MSG"`;
       todoLines.push(`exec ${cmd}`);
     }
   }
@@ -518,10 +415,10 @@ export async function addGroupStart(
 }
 
 /**
- * Remove Taspr-Group-End trailer from a specific commit.
- * Used to remove an orphan group end.
+ * Remove group trailers from a specific commit.
+ * Removes both Taspr-Group and Taspr-Group-Title.
  */
-export async function removeGroupEnd(
+export async function removeGroupTrailers(
   commitHash: string,
   groupId: string,
   options: GitOptions = {},
@@ -535,20 +432,105 @@ export async function removeGroupEnd(
 
   const mergeBase = await getMergeBase(options);
 
-  // Build todo with exec command to remove the trailer
+  // Build todo with exec command to remove the trailers
   const todoLines: string[] = [];
   for (const commit of commits) {
     todoLines.push(`pick ${commit.hash}`);
 
     if (commit.hash === targetCommit.hash) {
-      // Remove Taspr-Group-End for this group
+      // Remove Taspr-Group and Taspr-Group-Title for this group
+      const trailersToRemove: string[] = [`Taspr-Group: ${groupId}`];
+      const title = commit.trailers["Taspr-Group-Title"];
+      if (title) {
+        trailersToRemove.push(`Taspr-Group-Title: ${title}`);
+      }
+      const grepPatterns = trailersToRemove.map((t) => `-e "^${t}$"`).join(" ");
       todoLines.push(
-        `exec NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group-End: ${groupId}$") && git commit --amend --no-edit -m "$NEW_MSG"`,
+        `exec NEW_MSG=$(git log -1 --format=%B | grep -v ${grepPatterns}) && git commit --amend --no-edit -m "$NEW_MSG"`,
       );
     }
   }
 
   return runInteractiveRebase(createRebaseScript(todoLines), mergeBase, options);
+}
+
+/**
+ * Update group title on a specific commit.
+ * Used to fix inconsistent group titles.
+ */
+export async function updateGroupTitle(
+  commitHash: string,
+  oldTitle: string,
+  newTitle: string,
+  options: GitOptions = {},
+): Promise<ReorderResult> {
+  const commits = await getStackCommitsWithTrailers(options);
+
+  const targetCommit = commits.find((c) => c.hash === commitHash || c.hash.startsWith(commitHash));
+  if (!targetCommit) {
+    return { success: false, error: `Commit ${commitHash} not found in stack` };
+  }
+
+  const mergeBase = await getMergeBase(options);
+
+  // Build todo with exec command to update the title
+  const todoLines: string[] = [];
+  for (const commit of commits) {
+    todoLines.push(`pick ${commit.hash}`);
+
+    if (commit.hash === targetCommit.hash) {
+      // Remove old title and add new one
+      const cmd = `NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group-Title: ${oldTitle}$" | git interpret-trailers --trailer "Taspr-Group-Title: ${newTitle}") && git commit --amend --no-edit -m "$NEW_MSG"`;
+      todoLines.push(`exec ${cmd}`);
+    }
+  }
+
+  return runInteractiveRebase(createRebaseScript(todoLines), mergeBase, options);
+}
+
+/**
+ * Merge a split group by reordering commits to be contiguous.
+ * Moves all group commits together after the last interrupting commit.
+ */
+export async function mergeSplitGroup(
+  groupId: string,
+  options: GitOptions = {},
+): Promise<ReorderResult> {
+  const commits = await getStackCommitsWithTrailers(options);
+
+  // Find all commits in the group and their positions
+  const groupCommitHashes: string[] = [];
+  const nonGroupCommitHashes: string[] = [];
+  let groupTitle = "";
+
+  for (const commit of commits) {
+    if (commit.trailers["Taspr-Group"] === groupId) {
+      groupCommitHashes.push(commit.hash);
+      if (!groupTitle && commit.trailers["Taspr-Group-Title"]) {
+        groupTitle = commit.trailers["Taspr-Group-Title"];
+      }
+    } else {
+      nonGroupCommitHashes.push(commit.hash);
+    }
+  }
+
+  if (groupCommitHashes.length === 0) {
+    return { success: false, error: `Group ${groupId} not found` };
+  }
+
+  // New order: non-group commits first, then all group commits together
+  // This preserves relative order within each set
+  const newOrder = [...nonGroupCommitHashes, ...groupCommitHashes];
+
+  // Use applyGroupSpec with the new order and preserve the original group ID
+  // Group ID preservation is critical - it determines the branch name and PR association
+  return applyGroupSpec(
+    {
+      order: newOrder,
+      groups: [{ commits: groupCommitHashes, name: groupTitle || "Unnamed Group", id: groupId }],
+    },
+    options,
+  );
 }
 
 /**
@@ -564,10 +546,7 @@ export async function removeAllGroupTrailers(options: GitOptions = {}): Promise<
 
   // Find commits that have any group trailers
   const commitsWithGroupTrailers = commits.filter(
-    (c) =>
-      c.trailers["Taspr-Group-Start"] ||
-      c.trailers["Taspr-Group-End"] ||
-      c.trailers["Taspr-Group-Title"],
+    (c) => c.trailers["Taspr-Group"] || c.trailers["Taspr-Group-Title"],
   );
 
   if (commitsWithGroupTrailers.length === 0) {
@@ -581,15 +560,12 @@ export async function removeAllGroupTrailers(options: GitOptions = {}): Promise<
   for (const commit of commits) {
     todoLines.push(`pick ${commit.hash}`);
 
-    const hasGroupTrailers =
-      commit.trailers["Taspr-Group-Start"] ||
-      commit.trailers["Taspr-Group-End"] ||
-      commit.trailers["Taspr-Group-Title"];
+    const hasGroupTrailers = commit.trailers["Taspr-Group"] || commit.trailers["Taspr-Group-Title"];
 
     if (hasGroupTrailers) {
-      // Remove all Taspr-Group-* trailers
+      // Remove Taspr-Group and Taspr-Group-Title trailers
       todoLines.push(
-        `exec NEW_MSG=$(git log -1 --format=%B | grep -v "^Taspr-Group-") && git commit --amend --allow-empty --no-edit -m "$NEW_MSG"`,
+        `exec NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group:" -e "^Taspr-Group-Title:") && git commit --amend --allow-empty --no-edit -m "$NEW_MSG"`,
       );
     }
   }

@@ -16,9 +16,8 @@
  * - `multipleBranches` - Two independent feature branches
  * - `reorderConflict` - Commits that conflict when reordered (for TUI testing)
  * - `withGroups` - Stack with existing group trailers (for dissolve testing)
- * - `unclosedGroup` - Stack with unclosed group (for sync validation testing)
- * - `overlappingGroups` - Stack with overlapping groups (for sync validation testing)
- * - `orphanGroupEnd` - Stack with orphan group end (for sync validation testing)
+ * - `splitGroup` - Stack with split group (for sync validation testing)
+ * - `inconsistentGroupTitle` - Stack with inconsistent group titles (for sync validation testing)
  * - `mixedGroupStack` - Mixed stack with ungrouped + multi-commit group + single-commit group
  *
  * ## Usage in tests
@@ -233,12 +232,12 @@ export const scenarios = {
     description: "Stack with existing group trailers (for dissolve testing)",
     setup: async (repo: LocalRepo) => {
       await repo.branch("feature");
-      // Create a group of 2 commits
+      // Create a group of 2 commits (both have Taspr-Group and Taspr-Group-Title)
       await repo.commit({
         message: "First grouped commit",
         trailers: {
           "Taspr-Commit-Id": "grp00001",
-          "Taspr-Group-Start": "group-abc",
+          "Taspr-Group": "group-abc",
           "Taspr-Group-Title": "Feature Group",
         },
       });
@@ -246,7 +245,8 @@ export const scenarios = {
         message: "Second grouped commit",
         trailers: {
           "Taspr-Commit-Id": "grp00002",
-          "Taspr-Group-End": "group-abc",
+          "Taspr-Group": "group-abc",
+          "Taspr-Group-Title": "Feature Group",
         },
       });
       // Add a standalone commit outside the group
@@ -258,93 +258,64 @@ export const scenarios = {
   },
 
   /**
-   * Stack with an unclosed group (Taspr-Group-Start but no Taspr-Group-End).
+   * Stack with a split group (non-contiguous commits with same Taspr-Group).
    * For testing sync validation blocking.
    */
-  unclosedGroup: {
-    name: "unclosed-group",
-    description: "Stack with unclosed group (for sync validation testing)",
+  splitGroup: {
+    name: "split-group",
+    description: "Stack with split group (for sync validation testing)",
     setup: async (repo: LocalRepo) => {
       await repo.branch("feature");
-      // Create a group start without matching end
+      // First commit in group
       await repo.commit({
         message: "First grouped commit",
         trailers: {
-          "Taspr-Commit-Id": "unc00001",
-          "Taspr-Group-Start": "group-incomplete",
-          "Taspr-Group-Title": "Incomplete Group",
+          "Taspr-Commit-Id": "spl00001",
+          "Taspr-Group": "group-split",
+          "Taspr-Group-Title": "Split Group",
         },
       });
+      // Interrupting commit (not in group)
       await repo.commit({
-        message: "Second commit (missing group end)",
-        trailers: { "Taspr-Commit-Id": "unc00002" },
+        message: "Interrupting commit",
+        trailers: { "Taspr-Commit-Id": "spl00002" },
+      });
+      // Second commit in same group (non-contiguous = split)
+      await repo.commit({
+        message: "Second grouped commit",
+        trailers: {
+          "Taspr-Commit-Id": "spl00003",
+          "Taspr-Group": "group-split",
+          "Taspr-Group-Title": "Split Group",
+        },
       });
     },
   },
 
   /**
-   * Stack with overlapping groups (nested Taspr-Group-Start trailers).
+   * Stack with inconsistent group titles (same Taspr-Group but different Taspr-Group-Title).
    * For testing sync validation blocking.
    */
-  overlappingGroups: {
-    name: "overlapping-groups",
-    description: "Stack with overlapping groups (for sync validation testing)",
+  inconsistentGroupTitle: {
+    name: "inconsistent-group-title",
+    description: "Stack with inconsistent group titles (for sync validation testing)",
     setup: async (repo: LocalRepo) => {
       await repo.branch("feature");
-      // Start first group
       await repo.commit({
-        message: "Start first group",
+        message: "First grouped commit",
         trailers: {
-          "Taspr-Commit-Id": "ovr00001",
-          "Taspr-Group-Start": "group-outer",
-          "Taspr-Group-Title": "Outer Group",
-        },
-      });
-      // Start second group inside first (invalid)
-      await repo.commit({
-        message: "Start second group (overlapping)",
-        trailers: {
-          "Taspr-Commit-Id": "ovr00002",
-          "Taspr-Group-Start": "group-inner",
-          "Taspr-Group-Title": "Inner Group",
+          "Taspr-Commit-Id": "inc00001",
+          "Taspr-Group": "group-inconsistent",
+          "Taspr-Group-Title": "Title A",
         },
       });
       await repo.commit({
-        message: "Third commit",
+        message: "Second grouped commit with different title",
         trailers: {
-          "Taspr-Commit-Id": "ovr00003",
-          "Taspr-Group-End": "group-inner",
+          "Taspr-Commit-Id": "inc00002",
+          "Taspr-Group": "group-inconsistent",
+          "Taspr-Group-Title": "Title B", // Different title = error
         },
-      });
-    },
-  },
-
-  /**
-   * Stack with an orphan group end (Taspr-Group-End but no matching Taspr-Group-Start).
-   * For testing sync validation blocking and interactive repair.
-   */
-  orphanGroupEnd: {
-    name: "orphan-group-end",
-    description: "Stack with orphan group end (for sync validation testing)",
-    setup: async (repo: LocalRepo) => {
-      await repo.branch("feature");
-      // Regular commit without group trailers
-      await repo.commit({
-        message: "First commit (no group)",
-        trailers: { "Taspr-Commit-Id": "orp00001" },
-      });
-      // Commit with group end but no matching start
-      await repo.commit({
-        message: "Second commit (orphan group end)",
-        trailers: {
-          "Taspr-Commit-Id": "orp00002",
-          "Taspr-Group-End": "group-orphan",
-        },
-      });
-      // Another regular commit
-      await repo.commit({
-        message: "Third commit",
-        trailers: { "Taspr-Commit-Id": "orp00003" },
       });
     },
   },
@@ -365,24 +336,29 @@ export const scenarios = {
         trailers: { "Taspr-Commit-Id": "mix00001" },
       });
 
-      // 2. Multi-commit group (3 commits)
+      // 2. Multi-commit group (3 commits - all have both trailers)
       await repo.commit({
         message: "Add user authentication",
         trailers: {
           "Taspr-Commit-Id": "mix00002",
-          "Taspr-Group-Start": "group-auth",
+          "Taspr-Group": "group-auth",
           "Taspr-Group-Title": "User Authentication",
         },
       });
       await repo.commit({
         message: "Add login form component",
-        trailers: { "Taspr-Commit-Id": "mix00003" },
+        trailers: {
+          "Taspr-Commit-Id": "mix00003",
+          "Taspr-Group": "group-auth",
+          "Taspr-Group-Title": "User Authentication",
+        },
       });
       await repo.commit({
         message: "Add session management",
         trailers: {
           "Taspr-Commit-Id": "mix00004",
-          "Taspr-Group-End": "group-auth",
+          "Taspr-Group": "group-auth",
+          "Taspr-Group-Title": "User Authentication",
         },
       });
 
@@ -397,9 +373,8 @@ export const scenarios = {
         message: "Add dark mode support",
         trailers: {
           "Taspr-Commit-Id": "mix00006",
-          "Taspr-Group-Start": "group-dark",
+          "Taspr-Group": "group-dark",
           "Taspr-Group-Title": "Dark Mode",
-          "Taspr-Group-End": "group-dark",
         },
       });
 

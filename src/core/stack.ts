@@ -1,4 +1,4 @@
-import type { CommitInfo, PRUnit, StackParseResult, GroupInfo } from "../types.ts";
+import type { CommitInfo, PRUnit, StackParseResult } from "../types.ts";
 import type { CommitTrailers } from "../git/trailers.ts";
 
 /**
@@ -12,8 +12,8 @@ export interface CommitWithTrailers extends Omit<CommitInfo, "trailers"> {
  * Detect PRUnits from a list of commits.
  * Returns an array of PRUnits in oldest-to-newest order.
  *
- * Singles: commits without group trailers
- * Groups: commits between Taspr-Group-Start and Taspr-Group-End
+ * Singles: commits without Taspr-Group trailer
+ * Groups: contiguous commits with the same Taspr-Group trailer
  */
 export function detectPRUnits(commits: CommitWithTrailers[]): PRUnit[] {
   const units: PRUnit[] = [];
@@ -21,40 +21,38 @@ export function detectPRUnits(commits: CommitWithTrailers[]): PRUnit[] {
 
   for (const commit of commits) {
     const commitId = commit.trailers["Taspr-Commit-Id"];
-    const startId = commit.trailers["Taspr-Group-Start"];
-    const endId = commit.trailers["Taspr-Group-End"];
+    const groupId = commit.trailers["Taspr-Group"];
+    const groupTitle = commit.trailers["Taspr-Group-Title"];
 
-    if (startId && !currentGroup) {
-      // Start a new group
-      currentGroup = {
-        type: "group",
-        id: startId,
-        title: commit.trailers["Taspr-Group-Title"] || commit.subject,
-        commitIds: commitId ? [commitId] : [],
-        commits: [commit.hash],
-        subjects: [commit.subject],
-      };
-
-      // Check if this is a single-commit group (Start and End on same commit)
-      if (endId === startId) {
-        units.push(currentGroup);
-        currentGroup = null;
-      }
-    } else if (currentGroup) {
-      // Add to current group
-      if (commitId) {
-        currentGroup.commitIds.push(commitId);
-      }
-      currentGroup.commits.push(commit.hash);
-      currentGroup.subjects.push(commit.subject);
-
-      if (endId === currentGroup.id) {
-        // End of group
-        units.push(currentGroup);
-        currentGroup = null;
+    if (groupId) {
+      // This commit belongs to a group
+      if (currentGroup && currentGroup.id === groupId) {
+        // Continue current group
+        if (commitId) {
+          currentGroup.commitIds.push(commitId);
+        }
+        currentGroup.commits.push(commit.hash);
+        currentGroup.subjects.push(commit.subject);
+      } else {
+        // Start a new group (close previous if exists)
+        if (currentGroup) {
+          units.push(currentGroup);
+        }
+        currentGroup = {
+          type: "group",
+          id: groupId,
+          title: groupTitle || commit.subject,
+          commitIds: commitId ? [commitId] : [],
+          commits: [commit.hash],
+          subjects: [commit.subject],
+        };
       }
     } else {
-      // Single commit
+      // Single commit - close any current group first
+      if (currentGroup) {
+        units.push(currentGroup);
+        currentGroup = null;
+      }
       units.push({
         type: "single",
         id: commitId || commit.hash.slice(0, 8),
@@ -66,7 +64,7 @@ export function detectPRUnits(commits: CommitWithTrailers[]): PRUnit[] {
     }
   }
 
-  // If there's an unclosed group, still include it (validation handles errors)
+  // Don't forget the last group
   if (currentGroup) {
     units.push(currentGroup);
   }
@@ -77,79 +75,90 @@ export function detectPRUnits(commits: CommitWithTrailers[]): PRUnit[] {
 /**
  * Parse stack with validation for group integrity.
  * Returns a result type that includes validation errors for:
- * - Unclosed groups (Start without End)
- * - Overlapping groups (Start inside another group)
+ * - Split groups (non-contiguous commits with same Taspr-Group)
+ * - Inconsistent group titles (different Taspr-Group-Title for same group)
  */
 export function parseStack(commits: CommitWithTrailers[]): StackParseResult {
-  let activeGroup: { id: string; title: string; startCommit: string } | null = null;
+  // Track group positions and titles for validation
+  const groupPositions = new Map<string, number[]>();
+  const groupTitles = new Map<string, Map<string, string>>(); // groupId -> (hash -> title)
+  const groupCommits = new Map<string, string[]>(); // groupId -> commit hashes
 
-  for (const commit of commits) {
-    const startId = commit.trailers["Taspr-Group-Start"];
-    const endId = commit.trailers["Taspr-Group-End"];
+  for (let i = 0; i < commits.length; i++) {
+    const commit = commits[i];
+    if (!commit) continue;
 
-    // Check for overlapping groups
-    if (startId && activeGroup && startId !== activeGroup.id) {
-      const group1: GroupInfo = {
-        id: activeGroup.id,
-        title: activeGroup.title,
-        startCommit: activeGroup.startCommit,
-      };
-      const group2: GroupInfo = {
-        id: startId,
-        title: commit.trailers["Taspr-Group-Title"] || commit.subject,
-        startCommit: commit.hash,
-      };
-      return {
-        ok: false,
-        error: "overlapping-groups",
-        group1,
-        group2,
-        overlappingCommit: commit.hash,
-      };
-    }
+    const groupId = commit.trailers["Taspr-Group"];
+    const groupTitle = commit.trailers["Taspr-Group-Title"];
 
-    if (startId && !activeGroup) {
-      activeGroup = {
-        id: startId,
-        title: commit.trailers["Taspr-Group-Title"] || commit.subject,
-        startCommit: commit.hash,
-      };
-    }
+    if (groupId) {
+      // Track position
+      const positions = groupPositions.get(groupId) || [];
+      positions.push(i);
+      groupPositions.set(groupId, positions);
 
-    // Check for orphan group end (end without matching start)
-    if (endId && !activeGroup) {
-      return {
-        ok: false,
-        error: "orphan-group-end",
-        groupId: endId,
-        commit: commit.hash,
-      };
-    }
+      // Track commits
+      const hashes = groupCommits.get(groupId) || [];
+      hashes.push(commit.hash);
+      groupCommits.set(groupId, hashes);
 
-    // Check for mismatched group end (end doesn't match current group)
-    if (endId && activeGroup && endId !== activeGroup.id) {
-      return {
-        ok: false,
-        error: "orphan-group-end",
-        groupId: endId,
-        commit: commit.hash,
-      };
-    }
-
-    if (endId && activeGroup && endId === activeGroup.id) {
-      activeGroup = null;
+      // Track title if present
+      if (groupTitle) {
+        const titles = groupTitles.get(groupId) || new Map();
+        titles.set(commit.hash, groupTitle);
+        groupTitles.set(groupId, titles);
+      }
     }
   }
 
-  // Check for unclosed group
-  if (activeGroup) {
-    return {
-      ok: false,
-      error: "unclosed-group",
-      groupId: activeGroup.id,
-      startCommit: activeGroup.startCommit,
-      groupTitle: activeGroup.title,
-    };
+  // Check for split groups (non-contiguous positions)
+  for (const [groupId, positions] of groupPositions) {
+    if (positions.length < 2) continue;
+
+    // Check if positions are contiguous
+    for (let i = 1; i < positions.length; i++) {
+      const prev = positions[i - 1];
+      const curr = positions[i];
+      if (prev !== undefined && curr !== undefined && curr !== prev + 1) {
+        // Found a gap - collect interrupting commits
+        const interruptingCommits: string[] = [];
+        for (let j = prev + 1; j < curr; j++) {
+          const interruptingCommit = commits[j];
+          if (interruptingCommit) {
+            interruptingCommits.push(interruptingCommit.hash);
+          }
+        }
+
+        const titles = groupTitles.get(groupId);
+        const firstTitle = titles?.values().next().value || "Unknown";
+
+        return {
+          ok: false,
+          error: "split-group",
+          group: {
+            id: groupId,
+            title: firstTitle,
+            commits: groupCommits.get(groupId) || [],
+          },
+          interruptingCommits,
+        };
+      }
+    }
+  }
+
+  // Check for inconsistent group titles
+  for (const [groupId, titles] of groupTitles) {
+    if (titles.size <= 1) continue;
+
+    const uniqueTitles = new Set(titles.values());
+    if (uniqueTitles.size > 1) {
+      return {
+        ok: false,
+        error: "inconsistent-group-title",
+        groupId,
+        titles,
+      };
+    }
   }
 
   // Validation passed, return PRUnits

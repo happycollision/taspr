@@ -57,17 +57,22 @@ describe("core/stack", () => {
       });
     });
 
-    test("creates a group PRUnit for commits with group trailers", () => {
+    test("creates a group PRUnit for contiguous commits with same Taspr-Group", () => {
       const commits = [
         makeCommit("aaa111", "Start auth feature", {
           "Taspr-Commit-Id": "a1b2c3d4",
-          "Taspr-Group-Start": "f7e8d9c0",
+          "Taspr-Group": "f7e8d9c0",
           "Taspr-Group-Title": "Authentication Feature",
         }),
-        makeCommit("bbb222", "Add login endpoint", { "Taspr-Commit-Id": "b2c3d4e5" }),
+        makeCommit("bbb222", "Add login endpoint", {
+          "Taspr-Commit-Id": "b2c3d4e5",
+          "Taspr-Group": "f7e8d9c0",
+          "Taspr-Group-Title": "Authentication Feature",
+        }),
         makeCommit("ccc333", "Add 2FA support", {
           "Taspr-Commit-Id": "c3d4e5f6",
-          "Taspr-Group-End": "f7e8d9c0",
+          "Taspr-Group": "f7e8d9c0",
+          "Taspr-Group-Title": "Authentication Feature",
         }),
       ];
 
@@ -89,12 +94,13 @@ describe("core/stack", () => {
         makeCommit("aaa111", "Add user model", { "Taspr-Commit-Id": "a1b2c3d4" }),
         makeCommit("bbb222", "Start auth", {
           "Taspr-Commit-Id": "b2c3d4e5",
-          "Taspr-Group-Start": "f7e8d9c0",
+          "Taspr-Group": "f7e8d9c0",
           "Taspr-Group-Title": "Auth Feature",
         }),
         makeCommit("ccc333", "End auth", {
           "Taspr-Commit-Id": "c3d4e5f6",
-          "Taspr-Group-End": "f7e8d9c0",
+          "Taspr-Group": "f7e8d9c0",
+          "Taspr-Group-Title": "Auth Feature",
         }),
         makeCommit("ddd444", "Add dashboard", { "Taspr-Commit-Id": "d4e5f6a7" }),
       ];
@@ -113,23 +119,25 @@ describe("core/stack", () => {
 
     test("handles multiple consecutive groups", () => {
       const commits = [
-        makeCommit("aaa111", "Group 1 start", {
+        makeCommit("aaa111", "Group 1 commit 1", {
           "Taspr-Commit-Id": "a1",
-          "Taspr-Group-Start": "g1",
+          "Taspr-Group": "g1",
           "Taspr-Group-Title": "Group One",
         }),
-        makeCommit("bbb222", "Group 1 end", {
+        makeCommit("bbb222", "Group 1 commit 2", {
           "Taspr-Commit-Id": "b2",
-          "Taspr-Group-End": "g1",
+          "Taspr-Group": "g1",
+          "Taspr-Group-Title": "Group One",
         }),
-        makeCommit("ccc333", "Group 2 start", {
+        makeCommit("ccc333", "Group 2 commit 1", {
           "Taspr-Commit-Id": "c3",
-          "Taspr-Group-Start": "g2",
+          "Taspr-Group": "g2",
           "Taspr-Group-Title": "Group Two",
         }),
-        makeCommit("ddd444", "Group 2 end", {
+        makeCommit("ddd444", "Group 2 commit 2", {
           "Taspr-Commit-Id": "d4",
-          "Taspr-Group-End": "g2",
+          "Taspr-Group": "g2",
+          "Taspr-Group-Title": "Group Two",
         }),
       ];
 
@@ -146,12 +154,12 @@ describe("core/stack", () => {
       const commits = [
         makeCommit("aaa111", "My commit subject", {
           "Taspr-Commit-Id": "a1",
-          "Taspr-Group-Start": "g1",
+          "Taspr-Group": "g1",
           // No Taspr-Group-Title
         }),
-        makeCommit("bbb222", "End", {
+        makeCommit("bbb222", "Another commit", {
           "Taspr-Commit-Id": "b2",
-          "Taspr-Group-End": "g1",
+          "Taspr-Group": "g1",
         }),
       ];
 
@@ -177,25 +185,6 @@ describe("core/stack", () => {
       expect(units[1]?.commitIds).toEqual(["b2c3d4e5"]);
     });
 
-    test("handles unclosed group (includes it in output)", () => {
-      const commits = [
-        makeCommit("aaa111", "Start group", {
-          "Taspr-Commit-Id": "a1",
-          "Taspr-Group-Start": "g1",
-          "Taspr-Group-Title": "Unclosed Group",
-        }),
-        makeCommit("bbb222", "More work", { "Taspr-Commit-Id": "b2" }),
-        // No Group-End
-      ];
-
-      const units = detectPRUnits(commits);
-
-      expect(units).toHaveLength(1);
-      expect(units[0]?.type).toBe("group");
-      expect(units[0]?.id).toBe("g1");
-      expect(units[0]?.commits).toEqual(["aaa111", "bbb222"]);
-    });
-
     test("preserves commit order (oldest first)", () => {
       const commits = [
         makeCommit("first", "First commit", { "Taspr-Commit-Id": "id1" }),
@@ -208,13 +197,12 @@ describe("core/stack", () => {
       expect(units.map((u) => u.commits[0])).toEqual(["first", "second", "third"]);
     });
 
-    test("handles single-commit group (start and end on same commit)", () => {
+    test("handles single-commit group", () => {
       const commits = [
         makeCommit("aaa111", "Single-commit group", {
           "Taspr-Commit-Id": "a1",
-          "Taspr-Group-Start": "g1",
+          "Taspr-Group": "g1",
           "Taspr-Group-Title": "Solo Group",
-          "Taspr-Group-End": "g1",
         }),
       ];
 
@@ -227,24 +215,21 @@ describe("core/stack", () => {
     });
 
     test("handles single-commit group followed by multi-commit group", () => {
-      // Regression test: single-commit groups must close properly before
-      // the next group starts, otherwise the parser thinks all commits
-      // belong to the first group
       const commits = [
         makeCommit("aaa111", "Single-commit group", {
           "Taspr-Commit-Id": "a1",
-          "Taspr-Group-Start": "g1",
+          "Taspr-Group": "g1",
           "Taspr-Group-Title": "Group A",
-          "Taspr-Group-End": "g1",
         }),
         makeCommit("bbb222", "Multi-commit group start", {
           "Taspr-Commit-Id": "b2",
-          "Taspr-Group-Start": "g2",
+          "Taspr-Group": "g2",
           "Taspr-Group-Title": "Group B",
         }),
         makeCommit("ccc333", "Multi-commit group end", {
           "Taspr-Commit-Id": "c3",
-          "Taspr-Group-End": "g2",
+          "Taspr-Group": "g2",
+          "Taspr-Group-Title": "Group B",
         }),
       ];
 
@@ -280,14 +265,15 @@ describe("core/stack", () => {
 
     test("returns success with PRUnits for valid stack with groups", () => {
       const commits = [
-        makeCommit("aaa111", "Start group", {
+        makeCommit("aaa111", "Group commit 1", {
           "Taspr-Commit-Id": "a1",
-          "Taspr-Group-Start": "g1",
+          "Taspr-Group": "g1",
           "Taspr-Group-Title": "My Group",
         }),
-        makeCommit("bbb222", "End group", {
+        makeCommit("bbb222", "Group commit 2", {
           "Taspr-Commit-Id": "b2",
-          "Taspr-Group-End": "g1",
+          "Taspr-Group": "g1",
+          "Taspr-Group-Title": "My Group",
         }),
       ];
 
@@ -302,23 +288,25 @@ describe("core/stack", () => {
 
     test("returns success for multiple non-overlapping groups", () => {
       const commits = [
-        makeCommit("aaa111", "Group 1 start", {
+        makeCommit("aaa111", "Group 1 commit 1", {
           "Taspr-Commit-Id": "a1",
-          "Taspr-Group-Start": "g1",
+          "Taspr-Group": "g1",
           "Taspr-Group-Title": "Group One",
         }),
-        makeCommit("bbb222", "Group 1 end", {
+        makeCommit("bbb222", "Group 1 commit 2", {
           "Taspr-Commit-Id": "b2",
-          "Taspr-Group-End": "g1",
+          "Taspr-Group": "g1",
+          "Taspr-Group-Title": "Group One",
         }),
-        makeCommit("ccc333", "Group 2 start", {
+        makeCommit("ccc333", "Group 2 commit 1", {
           "Taspr-Commit-Id": "c3",
-          "Taspr-Group-Start": "g2",
+          "Taspr-Group": "g2",
           "Taspr-Group-Title": "Group Two",
         }),
-        makeCommit("ddd444", "Group 2 end", {
+        makeCommit("ddd444", "Group 2 commit 2", {
           "Taspr-Commit-Id": "d4",
-          "Taspr-Group-End": "g2",
+          "Taspr-Group": "g2",
+          "Taspr-Group-Title": "Group Two",
         }),
       ];
 
@@ -330,60 +318,30 @@ describe("core/stack", () => {
       }
     });
 
-    test("returns unclosed-group error when group has no end", () => {
+    test("returns split-group error when group commits are non-contiguous", () => {
       const commits = [
-        makeCommit("aaa111", "Start group", {
+        makeCommit("aaa111", "Group commit 1", {
           "Taspr-Commit-Id": "a1",
-          "Taspr-Group-Start": "g1",
-          "Taspr-Group-Title": "Unclosed Group",
+          "Taspr-Group": "g1",
+          "Taspr-Group-Title": "Split Group",
         }),
-        makeCommit("bbb222", "More work", { "Taspr-Commit-Id": "b2" }),
-        // No Group-End
-      ];
-
-      const result = parseStack(commits);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok && result.error === "unclosed-group") {
-        expect(result.groupId).toBe("g1");
-        expect(result.startCommit).toBe("aaa111");
-        expect(result.groupTitle).toBe("Unclosed Group");
-      }
-    });
-
-    test("returns overlapping-groups error when group starts inside another", () => {
-      const commits = [
-        makeCommit("aaa111", "Group 1 start", {
-          "Taspr-Commit-Id": "a1",
-          "Taspr-Group-Start": "g1",
-          "Taspr-Group-Title": "Outer Group",
-        }),
-        makeCommit("bbb222", "Group 2 start (overlap!)", {
-          "Taspr-Commit-Id": "b2",
-          "Taspr-Group-Start": "g2",
-          "Taspr-Group-Title": "Inner Group",
-        }),
-        makeCommit("ccc333", "Group 2 end", {
+        makeCommit("bbb222", "Interrupting single commit", { "Taspr-Commit-Id": "b2" }),
+        makeCommit("ccc333", "Group commit 2", {
           "Taspr-Commit-Id": "c3",
-          "Taspr-Group-End": "g2",
-        }),
-        makeCommit("ddd444", "Group 1 end", {
-          "Taspr-Commit-Id": "d4",
-          "Taspr-Group-End": "g1",
+          "Taspr-Group": "g1",
+          "Taspr-Group-Title": "Split Group",
         }),
       ];
 
       const result = parseStack(commits);
 
       expect(result.ok).toBe(false);
-      if (!result.ok && result.error === "overlapping-groups") {
-        expect(result.group1.id).toBe("g1");
-        expect(result.group1.title).toBe("Outer Group");
-        expect(result.group1.startCommit).toBe("aaa111");
-        expect(result.group2.id).toBe("g2");
-        expect(result.group2.title).toBe("Inner Group");
-        expect(result.group2.startCommit).toBe("bbb222");
-        expect(result.overlappingCommit).toBe("bbb222");
+      if (!result.ok && result.error === "split-group") {
+        expect(result.group.id).toBe("g1");
+        expect(result.group.title).toBe("Split Group");
+        expect(result.group.commits).toContain("aaa111");
+        expect(result.group.commits).toContain("ccc333");
+        expect(result.interruptingCommits).toContain("bbb222");
       }
     });
 
@@ -396,43 +354,53 @@ describe("core/stack", () => {
       }
     });
 
-    test("returns orphan-group-end error when Group-End has no matching Start", () => {
+    test("returns inconsistent-group-title error when titles differ", () => {
       const commits = [
-        makeCommit("aaa111", "Orphan end", {
+        makeCommit("aaa111", "Group commit 1", {
           "Taspr-Commit-Id": "a1",
-          "Taspr-Group-End": "g1", // No matching start
+          "Taspr-Group": "g1",
+          "Taspr-Group-Title": "Title A",
         }),
-        makeCommit("bbb222", "Normal commit", { "Taspr-Commit-Id": "b2" }),
+        makeCommit("bbb222", "Group commit 2", {
+          "Taspr-Commit-Id": "b2",
+          "Taspr-Group": "g1",
+          "Taspr-Group-Title": "Title B", // Different title!
+        }),
       ];
 
       const result = parseStack(commits);
 
       expect(result.ok).toBe(false);
-      if (!result.ok && result.error === "orphan-group-end") {
+      if (!result.ok && result.error === "inconsistent-group-title") {
         expect(result.groupId).toBe("g1");
-        expect(result.commit).toBe("aaa111");
+        expect(result.titles.get("aaa111")).toBe("Title A");
+        expect(result.titles.get("bbb222")).toBe("Title B");
       }
     });
 
-    test("returns orphan-group-end error when Group-End doesn't match active group", () => {
+    test("handles split group with multiple interrupting commits", () => {
       const commits = [
-        makeCommit("aaa111", "Start group g1", {
+        makeCommit("aaa111", "Group commit 1", {
           "Taspr-Commit-Id": "a1",
-          "Taspr-Group-Start": "g1",
-          "Taspr-Group-Title": "Group One",
+          "Taspr-Group": "g1",
+          "Taspr-Group-Title": "Split Group",
         }),
-        makeCommit("bbb222", "End with wrong ID", {
-          "Taspr-Commit-Id": "b2",
-          "Taspr-Group-End": "g2", // Wrong ID - should be g1
+        makeCommit("bbb222", "Interrupting commit 1", { "Taspr-Commit-Id": "b2" }),
+        makeCommit("ccc333", "Interrupting commit 2", { "Taspr-Commit-Id": "c3" }),
+        makeCommit("ddd444", "Group commit 2", {
+          "Taspr-Commit-Id": "d4",
+          "Taspr-Group": "g1",
+          "Taspr-Group-Title": "Split Group",
         }),
       ];
 
       const result = parseStack(commits);
 
       expect(result.ok).toBe(false);
-      if (!result.ok && result.error === "orphan-group-end") {
-        expect(result.groupId).toBe("g2");
-        expect(result.commit).toBe("bbb222");
+      if (!result.ok && result.error === "split-group") {
+        expect(result.interruptingCommits).toHaveLength(2);
+        expect(result.interruptingCommits).toContain("bbb222");
+        expect(result.interruptingCommits).toContain("ccc333");
       }
     });
   });

@@ -240,8 +240,6 @@ taspr sync
 
 **Alternative: Adding fixup! commits to an existing PR:**
 
-<!-- FIXUP_GROUP_DOCS: Update after taspr-b3e is resolved - squashing grouped fixups has edge cases -->
-
 Some teams prefer reviewers to see fixup! commits that address feedback, rather than squashing immediately. You can group the fixup! commit with the original to add it to the same PR:
 
 ```bash

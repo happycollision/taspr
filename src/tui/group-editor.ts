@@ -64,23 +64,22 @@ function toCommitDisplays(
   commits: Awaited<ReturnType<typeof getStackCommitsWithTrailers>>,
 ): CommitDisplayResult {
   // Track group assignments from trailers
-  let currentGroup: string | null = null;
   let groupIndex = 0;
   const groupLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-  // First pass: identify groups and their titles
+  // First pass: identify unique groups and their titles
   const groupMap = new Map<string, string>(); // groupId -> letter
   const groupTitles = new Map<string, string>(); // groupId -> title
   for (const commit of commits) {
-    const startId = commit.trailers["Taspr-Group-Start"];
+    const groupId = commit.trailers["Taspr-Group"];
     const title = commit.trailers["Taspr-Group-Title"];
-    if (startId && !groupMap.has(startId)) {
+    if (groupId && !groupMap.has(groupId)) {
       const letter = groupLetters[groupIndex++ % 26];
       if (letter) {
-        groupMap.set(startId, letter);
+        groupMap.set(groupId, letter);
       }
       if (title) {
-        groupTitles.set(startId, title);
+        groupTitles.set(groupId, title);
       }
     }
   }
@@ -94,26 +93,18 @@ function toCommitDisplays(
     }
   }
 
-  // Second pass: assign letters
+  // Second pass: assign letters based on Taspr-Group trailer
   const displayCommits = commits.map((commit) => {
-    const startId = commit.trailers["Taspr-Group-Start"];
-    const endId = commit.trailers["Taspr-Group-End"];
-
-    if (startId) {
-      currentGroup = groupMap.get(startId) || null;
-    }
+    const groupId = commit.trailers["Taspr-Group"];
+    const letter = groupId ? groupMap.get(groupId) : null;
 
     const display: CommitDisplay = {
       hash: commit.hash,
       shortHash: commit.hash.slice(0, 8),
       subject: commit.subject,
       commitId: commit.trailers["Taspr-Commit-Id"],
-      originalGroup: currentGroup ?? undefined,
+      originalGroup: letter ?? undefined,
     };
-
-    if (endId) {
-      currentGroup = null;
-    }
 
     return display;
   });

@@ -3,9 +3,10 @@ import type { GitOptions } from "./commands.ts";
 
 export interface CommitTrailers {
   "Taspr-Commit-Id"?: string;
-  "Taspr-Group-Start"?: string;
+  /** Group ID - present on ALL commits in a group */
+  "Taspr-Group"?: string;
+  /** Group title - present on ALL commits in a group */
   "Taspr-Group-Title"?: string;
-  "Taspr-Group-End"?: string;
   [key: string]: string | undefined;
 }
 

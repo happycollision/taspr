@@ -64,14 +64,13 @@ describe("group-rebase", () => {
 
       expect(result.success).toBe(true);
 
-      // Verify trailers were added
+      // Verify trailers were added - now all commits have Taspr-Group and Taspr-Group-Title
       const commits = await getStackCommitsWithTrailers({ cwd: repo.path });
       expect(commits).toHaveLength(1);
 
       const commit = commits[0]!;
-      expect(commit.trailers["Taspr-Group-Start"]).toBeDefined();
+      expect(commit.trailers["Taspr-Group"]).toBeDefined();
       expect(commit.trailers["Taspr-Group-Title"]).toBe("Single Commit Group");
-      expect(commit.trailers["Taspr-Group-End"]).toBe(commit.trailers["Taspr-Group-Start"]);
     });
 
     test("creates a multi-commit group", async () => {
@@ -91,23 +90,18 @@ describe("group-rebase", () => {
 
       expect(result.success).toBe(true);
 
-      // Verify trailers were added
+      // Verify trailers were added - ALL commits now have both trailers
       const commits = await getStackCommitsWithTrailers({ cwd: repo.path });
       expect(commits).toHaveLength(3);
 
-      // First commit should have Start and Title
-      expect(commits[0]!.trailers["Taspr-Group-Start"]).toBeDefined();
-      expect(commits[0]!.trailers["Taspr-Group-Title"]).toBe("Multi Commit Group");
-      expect(commits[0]!.trailers["Taspr-Group-End"]).toBeUndefined();
+      const groupId = commits[0]!.trailers["Taspr-Group"];
+      expect(groupId).toBeDefined();
 
-      // Middle commit should have no group trailers
-      expect(commits[1]!.trailers["Taspr-Group-Start"]).toBeUndefined();
-      expect(commits[1]!.trailers["Taspr-Group-End"]).toBeUndefined();
-
-      // Last commit should have End
-      const groupId = commits[0]!.trailers["Taspr-Group-Start"];
-      expect(commits[2]!.trailers["Taspr-Group-End"]).toBe(groupId);
-      expect(commits[2]!.trailers["Taspr-Group-Start"]).toBeUndefined();
+      // All commits should have the same group ID and title
+      for (const commit of commits) {
+        expect(commit.trailers["Taspr-Group"]).toBe(groupId);
+        expect(commit.trailers["Taspr-Group-Title"]).toBe("Multi Commit Group");
+      }
     });
 
     test("supports short hash references", async () => {
@@ -203,16 +197,15 @@ describe("group-rebase", () => {
       expect(commits[1]!.subject).toContain("First");
       expect(commits[2]!.subject).toContain("Second");
 
-      // Verify group (Third and First)
-      expect(commits[0]!.trailers["Taspr-Group-Start"]).toBeDefined();
+      // Verify group (Third and First have same Taspr-Group)
+      const groupId = commits[0]!.trailers["Taspr-Group"];
+      expect(groupId).toBeDefined();
       expect(commits[0]!.trailers["Taspr-Group-Title"]).toBe("Reordered Group");
-      expect(commits[1]!.trailers["Taspr-Group-End"]).toBe(
-        commits[0]!.trailers["Taspr-Group-Start"],
-      );
+      expect(commits[1]!.trailers["Taspr-Group"]).toBe(groupId);
+      expect(commits[1]!.trailers["Taspr-Group-Title"]).toBe("Reordered Group");
 
       // Second should not be in the group
-      expect(commits[2]!.trailers["Taspr-Group-Start"]).toBeUndefined();
-      expect(commits[2]!.trailers["Taspr-Group-End"]).toBeUndefined();
+      expect(commits[2]!.trailers["Taspr-Group"]).toBeUndefined();
     });
 
     test("does nothing when no changes needed", async () => {
@@ -356,8 +349,7 @@ describe("group-rebase", () => {
       // Verify trailers were removed
       commits = await getStackCommitsWithTrailers({ cwd: repo.path });
       expect(commits[0]!.trailers["Taspr-Group-Title"]).toBeUndefined();
-      expect(commits[0]!.trailers["Taspr-Group-Start"]).toBeUndefined();
-      expect(commits[0]!.trailers["Taspr-Group-End"]).toBeUndefined();
+      expect(commits[0]!.trailers["Taspr-Group"]).toBeUndefined();
     });
   });
 
@@ -369,9 +361,9 @@ describe("group-rebase", () => {
       // Verify the group exists before dissolving
       let commits = await getStackCommitsWithTrailers({ cwd: repo.path });
       expect(commits).toHaveLength(3);
-      expect(commits[0]!.trailers["Taspr-Group-Start"]).toBe("group-abc");
+      expect(commits[0]!.trailers["Taspr-Group"]).toBe("group-abc");
       expect(commits[0]!.trailers["Taspr-Group-Title"]).toBe("Feature Group");
-      expect(commits[1]!.trailers["Taspr-Group-End"]).toBe("group-abc");
+      expect(commits[1]!.trailers["Taspr-Group"]).toBe("group-abc");
 
       // Dissolve the group
       const result = await dissolveGroup("group-abc", { cwd: repo.path });
@@ -381,14 +373,11 @@ describe("group-rebase", () => {
       commits = await getStackCommitsWithTrailers({ cwd: repo.path });
       expect(commits).toHaveLength(3);
 
-      // First commit should have no group trailers
-      expect(commits[0]!.trailers["Taspr-Group-Start"]).toBeUndefined();
+      // First and second commits should have no group trailers
+      expect(commits[0]!.trailers["Taspr-Group"]).toBeUndefined();
       expect(commits[0]!.trailers["Taspr-Group-Title"]).toBeUndefined();
-      expect(commits[0]!.trailers["Taspr-Group-End"]).toBeUndefined();
-
-      // Second commit should have no group trailers
-      expect(commits[1]!.trailers["Taspr-Group-Start"]).toBeUndefined();
-      expect(commits[1]!.trailers["Taspr-Group-End"]).toBeUndefined();
+      expect(commits[1]!.trailers["Taspr-Group"]).toBeUndefined();
+      expect(commits[1]!.trailers["Taspr-Group-Title"]).toBeUndefined();
 
       // Third commit was never in a group, should be unchanged
       expect(commits[2]!.trailers["Taspr-Commit-Id"]).toBe("std00001");
@@ -408,16 +397,14 @@ describe("group-rebase", () => {
         message: "Single commit group",
         trailers: {
           "Taspr-Commit-Id": "single01",
-          "Taspr-Group-Start": "single-group",
+          "Taspr-Group": "single-group",
           "Taspr-Group-Title": "Single Group",
-          "Taspr-Group-End": "single-group",
         },
       });
 
       // Verify group exists
       let commits = await getStackCommitsWithTrailers({ cwd: repo.path });
-      expect(commits[0]!.trailers["Taspr-Group-Start"]).toBe("single-group");
-      expect(commits[0]!.trailers["Taspr-Group-End"]).toBe("single-group");
+      expect(commits[0]!.trailers["Taspr-Group"]).toBe("single-group");
 
       // Dissolve
       const result = await dissolveGroup("single-group", { cwd: repo.path });
@@ -425,9 +412,8 @@ describe("group-rebase", () => {
 
       // Verify trailers removed
       commits = await getStackCommitsWithTrailers({ cwd: repo.path });
-      expect(commits[0]!.trailers["Taspr-Group-Start"]).toBeUndefined();
+      expect(commits[0]!.trailers["Taspr-Group"]).toBeUndefined();
       expect(commits[0]!.trailers["Taspr-Group-Title"]).toBeUndefined();
-      expect(commits[0]!.trailers["Taspr-Group-End"]).toBeUndefined();
       // Taspr-Commit-Id should remain
       expect(commits[0]!.trailers["Taspr-Commit-Id"]).toBe("single01");
     });
@@ -448,17 +434,15 @@ describe("group-rebase", () => {
       await repo.commit({
         message: "Group A commit 1",
         trailers: {
-          "Taspr-Group-Start": "group-a",
+          "Taspr-Group": "group-a",
           "Taspr-Group-Title": "Group A",
-          "Taspr-Group-End": "group-a",
         },
       });
       await repo.commit({
         message: "Group B commit 1",
         trailers: {
-          "Taspr-Group-Start": "group-b",
+          "Taspr-Group": "group-b",
           "Taspr-Group-Title": "Group B",
-          "Taspr-Group-End": "group-b",
         },
       });
 
@@ -471,13 +455,12 @@ describe("group-rebase", () => {
       expect(commits).toHaveLength(2);
 
       // First commit (was group-a) should have no group trailers
-      expect(commits[0]!.trailers["Taspr-Group-Start"]).toBeUndefined();
+      expect(commits[0]!.trailers["Taspr-Group"]).toBeUndefined();
       expect(commits[0]!.trailers["Taspr-Group-Title"]).toBeUndefined();
 
       // Second commit (group-b) should still have its trailers
-      expect(commits[1]!.trailers["Taspr-Group-Start"]).toBe("group-b");
+      expect(commits[1]!.trailers["Taspr-Group"]).toBe("group-b");
       expect(commits[1]!.trailers["Taspr-Group-Title"]).toBe("Group B");
-      expect(commits[1]!.trailers["Taspr-Group-End"]).toBe("group-b");
     });
   });
 });
