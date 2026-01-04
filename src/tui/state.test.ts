@@ -1,11 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import {
-  createInitialState,
-  quickSwap,
-  moveCursor,
-  toggleMoveMode,
-  type CommitDisplay,
-} from "./state.ts";
+import { createInitialState, quickSwap, toggleMoveMode, type CommitDisplay } from "./state.ts";
 
 function makeCommits(count: number): CommitDisplay[] {
   return Array.from({ length: count }, (_, i) => ({
