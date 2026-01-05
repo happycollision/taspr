@@ -29,8 +29,8 @@ beads.left.meta.json
 beads.right.jsonl
 beads.right.meta.json
 
-# Keep JSONL exports and config (source of truth for git)
-!issues.jsonl
+# Keep config files tracked (source of truth for git)
+# Note: issues.jsonl is tracked on sync-branch (beads-sync), not working branches
 !interactions.jsonl
 !metadata.json
 !config.json
