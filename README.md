@@ -14,6 +14,7 @@ Taspr automates the stacked PR workflow:
 - Each commit (or group of commits) becomes its own PR
 - PRs are automatically chained with proper base branches
 - Rebasing and syncing is handled for you
+- Land PRs when ready and automatically retarget dependents
 
 ## Installation
 
@@ -64,6 +65,9 @@ taspr view
 
 # 3. Sync with GitHub and create PRs
 taspr sync --open
+
+# 4. When the first PR is approved, land it
+taspr land
 ```
 
 ## Commands
@@ -73,13 +77,15 @@ taspr sync --open
 Display the current stack of commits and their PR status.
 
 ```bash
-taspr view
+taspr view          # View stack for current branch
+taspr view --all    # View all your open PRs across branches
 ```
 
 Output shows:
 
 - Commit messages and their taspr IDs
 - PR numbers and status (open, merged, closed)
+- PR health: CI checks, review status, comments
 - Grouped commits displayed together
 
 ### `taspr sync`
@@ -100,15 +106,102 @@ This command:
 2. Adds `Taspr-Commit-Id` trailers to commits (via interactive rebase)
 3. Pushes each branch to the remote
 4. Creates or updates PRs (with `--open` flag)
+5. Automatically retargets open PRs when earlier branches are merged
+6. Cleans up merged PRs and orphaned branches
+
+### `taspr land`
+
+Merge ready PRs from your stack into main.
+
+```bash
+# Merge the bottom-most ready PR
+taspr land
+
+# Merge all consecutive ready PRs from the bottom
+taspr land --all
+```
+
+Before merging, `taspr land` validates:
+
+- CI checks are passing
+- Required reviews are approved
+- No merge conflicts
+
+After merging:
+
+- Dependent PRs are automatically retargeted to the new base
+- Remote branches are cleaned up
+
+### `taspr group`
+
+Interactive TUI for grouping multiple commits into a single PR.
+
+```bash
+taspr group
+```
+
+**Keyboard controls:**
+
+| Key         | Action                                 |
+| ----------- | -------------------------------------- |
+| `↑/↓`       | Navigate between commits               |
+| `←/→`       | Assign/remove commit from a group      |
+| `Space`     | Enter move mode to reorder commits     |
+| `Shift+↑/↓` | Quick swap (reorder without move mode) |
+| `Enter`     | Confirm and apply changes              |
+| `Esc`       | Cancel                                 |
+
+**Non-interactive mode:**
+
+```bash
+# Apply grouping via JSON specification
+taspr group --apply '{"order": ["abc123", "def456"], "groups": [{"commits": ["abc123", "def456"], "name": "Feature X"}]}'
+```
+
+**Repair invalid groups:**
+
+```bash
+# Interactive repair
+taspr group --fix
+
+# Non-interactive: dissolve problematic groups
+taspr group --fix dissolve
+```
+
+### `taspr group dissolve`
+
+Remove grouping from commits, turning them back into individual PRs.
+
+```bash
+# Interactive: select groups to dissolve
+taspr group dissolve
+
+# Dissolve a specific group
+taspr group dissolve <group-id>
+
+# Specify which commit inherits the existing PR
+taspr group dissolve <group-id> --inherit <commit>
+
+# Don't inherit the PR to any commit
+taspr group dissolve <group-id> --no-inherit
+```
+
+### `taspr clean`
+
+Find and remove orphaned branches that have been merged.
+
+```bash
+# Preview what would be cleaned
+taspr clean --dry-run
+
+# Delete orphaned branches
+taspr clean
+
+# Force delete branches detected by commit-id (may lose original content)
+taspr clean --force
+```
 
 ## Core Concepts
-
-### PR Units
-
-Taspr organizes commits into **PR units**:
-
-- **Single**: One commit = one PR (uses commit subject as title)
-- **Group**: Multiple commits = one PR (uses group title)
 
 ### Commit Trailers
 
@@ -126,38 +219,9 @@ Trailers are added automatically by `taspr sync`.
 
 ### Grouping Commits
 
-Group multiple commits into a single PR using trailers:
+You can group multiple commits into a single PR using `taspr group` (recommended) or manually via trailers:
 
-```bash
-# First commit of group
-git commit -m "Start auth feature
-
-Taspr-Group-Start: auth
-Taspr-Group-Title: User Authentication"
-
-# Middle commits (no special trailers needed)
-git commit -m "Add login endpoint"
-git commit -m "Add logout endpoint"
-
-# Last commit of group
-git commit -m "Add auth tests
-
-Taspr-Group-End: auth"
-```
-
-All commits between `Group-Start` and `Group-End` become one PR.
-
-### Branch Naming
-
-Taspr creates branches with the format:
-
-```
-<prefix>/<username>/<prId>
-```
-
-Example: `taspr/johndoe/a1b2c3d4`
-
-Each PR's branch uses the previous PR's branch as its base, creating the stack.
+All grouped commits become one PR when you `taspr sync --open`.
 
 ## Configuration
 
@@ -201,7 +265,7 @@ Commits with certain prefixes are considered "temporary" and won't automatically
 
 ```bash
 # Example: WIP commit won't get a PR
-git commit -m "WIP: experimenting with new approach"
+git commit -m "WIP: experimenting with new caching approach"
 taspr sync --open
 # Output: ⚠ Skipped PR for 1 temporary commit(s)
 
@@ -262,7 +326,9 @@ git rebase -i --autosquash origin/main
 taspr sync
 ```
 
-## Workflow Example
+## Workflow Examples
+
+### Basic Stacked PR Workflow
 
 ```bash
 # Start a new feature
@@ -292,6 +358,41 @@ git rebase -i HEAD~4
 
 # Sync again to update PRs
 taspr sync
+
+# When PR #1 is approved, land it
+taspr land
+# PR #1 merges to main, PR #2 is retargeted to main
+
+# Land all remaining ready PRs
+taspr land --all
+```
+
+### Grouping Related Commits
+
+```bash
+# You have several commits that should be reviewed together
+git commit -m "Add auth types"
+git commit -m "Add auth middleware"
+git commit -m "Add auth routes"
+
+# Group them into one PR
+taspr group
+# Use ←/→ to assign all three commits to group "A"
+# Press Enter to confirm
+
+# Sync creates a single PR for the group
+taspr sync --open
+```
+
+### Managing many branches/stacks
+
+```bash
+# View all your open PRs across branches
+taspr view --all
+
+# Clean up merged branches
+taspr clean --dry-run  # Preview first
+taspr clean            # Delete orphaned branches
 ```
 
 ## Development
@@ -326,6 +427,7 @@ src/
 ├── core/          # Core logic (stack parsing, ID generation)
 ├── git/           # Git operations (commands, trailers, rebase)
 ├── github/        # GitHub integration (API, branches, PRs)
+├── tui/           # Terminal UI components
 ├── types.ts       # TypeScript types
 └── utils/         # Utilities
 ```
