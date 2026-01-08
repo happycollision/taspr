@@ -21,6 +21,12 @@ program
   .command("sync")
   .description("Sync stack with GitHub: add IDs, push branches, and optionally create PRs")
   .option("--open", "Create PRs for branches that don't have them")
+  .option(
+    "--apply <json>",
+    "Only open PRs for specified commits/groups (JSON array of identifiers)",
+  )
+  .option("--up-to <id>", "Only open PRs for commits/groups up to and including this identifier")
+  .option("-i, --interactive", "Interactively select which commits/groups to open PRs for")
   .action((options) => syncCommand(options));
 
 program

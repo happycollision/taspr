@@ -21,16 +21,26 @@ import {
 } from "../../github/pr.ts";
 import { asserted } from "../../utils/assert.ts";
 import { getAllSyncStatuses, getSyncSummary, hasChanges } from "../../git/remote.ts";
-import type { PRUnit } from "../../types.ts";
+import type { PRUnit, CommitInfo } from "../../types.ts";
+import {
+  parseApplySpec,
+  resolveIdentifiers,
+  resolveUpTo,
+  formatResolutionError,
+} from "../../core/identifier.ts";
 import {
   readGroupTitles,
   fetchGroupTitles,
   pushGroupTitles,
   purgeOrphanedTitles,
 } from "../../git/group-titles.ts";
+import { openSelect, type OpenSelectOption } from "../../tui/open-select.ts";
 
 export interface SyncOptions {
   open?: boolean;
+  apply?: string;
+  upTo?: string;
+  interactive?: boolean;
 }
 
 interface MergedPRInfo {
@@ -183,12 +193,84 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     // Get temp commit prefixes for skipping PR creation
     const tasprConfig = await getTasprConfig();
 
+    // Validate mutually exclusive options
+    const selectorCount = [options.apply, options.upTo, options.interactive].filter(Boolean).length;
+    if (selectorCount > 1) {
+      console.error("✗ Error: --apply, --up-to, and --interactive are mutually exclusive");
+      process.exit(1);
+    }
+
+    // These options require --open
+    if ((options.apply || options.upTo || options.interactive) && !options.open) {
+      console.error("✗ Error: --apply, --up-to, and --interactive require --open flag");
+      process.exit(1);
+    }
+
+    // Parse --apply, --up-to, or run interactive selection to get set of units to open PRs for
+    let applyUnitIds: Set<string> | null = null;
+
+    if (options.apply) {
+      try {
+        const identifiers = parseApplySpec(options.apply);
+        const { unitIds, errors } = resolveIdentifiers(
+          identifiers,
+          activeUnits,
+          commits as CommitInfo[],
+        );
+
+        if (errors.length > 0) {
+          for (const error of errors) {
+            console.error(formatResolutionError(error));
+          }
+          process.exit(1);
+        }
+
+        applyUnitIds = unitIds;
+      } catch (err) {
+        console.error(`✗ ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    } else if (options.upTo) {
+      const result = resolveUpTo(options.upTo, activeUnits, commits as CommitInfo[]);
+      if (!result.ok) {
+        console.error(formatResolutionError(result.error));
+        process.exit(1);
+      }
+      applyUnitIds = result.unitIds;
+    } else if (options.interactive) {
+      // Build options for interactive selection
+      const selectOptions: OpenSelectOption[] = [];
+      for (const unit of activeUnits) {
+        const headBranch = getBranchName(unit.id, branchConfig);
+        const existingPR = await findPRByBranch(headBranch);
+        const isTemp = isTempCommit(unit.title, tasprConfig.tempCommitPrefixes);
+
+        selectOptions.push({
+          id: unit.id,
+          label: unit.title,
+          shortId: unit.id.slice(0, 8),
+          hasPR: existingPR !== null,
+          prNumber: existingPR?.number,
+          isTemp,
+        });
+      }
+
+      const result = await openSelect(selectOptions);
+      if (result.cancelled) {
+        console.log("Cancelled.");
+        return;
+      }
+
+      applyUnitIds = new Set(result.selectedIds);
+    }
+
     // Push branches and track PR status
     let baseBranch = defaultBranch;
     const created: PRInfo[] = [];
     const updated: PRInfo[] = [];
     const skippedNoPR: string[] = [];
     const skippedTemp: string[] = [];
+    const skippedByApply: string[] = [];
     let pushedCount = 0;
 
     for (const unit of activeUnits) {
@@ -221,6 +303,10 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
         if (isTempCommit(unit.title, tasprConfig.tempCommitPrefixes)) {
           // Skip PR creation for temp commits, but branch was already pushed for stacking
           skippedTemp.push(unit.title);
+        } else if (applyUnitIds && !applyUnitIds.has(unit.id)) {
+          // Skip PR creation if --apply is specified and this unit is not in the list
+          // Branch was still pushed for stacking
+          skippedByApply.push(unit.title);
         } else {
           // Create new PR (--open is specified and no PR exists)
           const pr = await createPR({
@@ -267,6 +353,10 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
         console.log(`  ${title}`);
       }
       console.log(`  See: https://github.com/happycollision/taspr#temporary-commits`);
+    }
+
+    if (skippedByApply.length > 0) {
+      console.log(`✓ ${skippedByApply.length} branch(es) pushed without PR (not in --apply list)`);
     }
 
     if (summary.upToDate > 0 && pushedCount === 0 && skippedNoPR.length === 0) {
