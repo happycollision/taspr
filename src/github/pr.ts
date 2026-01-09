@@ -147,6 +147,73 @@ export async function findPRByBranch(
   return openPR || prs[0] || null;
 }
 
+/** Extended PR info including head branch name for batch lookups */
+interface PRInfoWithHead extends PRInfo {
+  headRefName: string;
+}
+
+/**
+ * Find existing PRs for multiple branches in a single API call.
+ * Returns a Map from branch name to PRInfo (or null if no PR exists).
+ * By default only searches open PRs; use includeAll to also find merged/closed PRs.
+ *
+ * This is much more efficient than calling findPRByBranch in a loop,
+ * as it makes only one GitHub API call regardless of the number of branches.
+ */
+export async function findPRsByBranches(
+  branchNames: string[],
+  options?: { includeAll?: boolean },
+): Promise<Map<string, PRInfo | null>> {
+  await ensureGhInstalled();
+
+  const result: Map<string, PRInfo | null> = new Map();
+
+  // Initialize all branches as null (no PR found)
+  for (const branch of branchNames) {
+    result.set(branch, null);
+  }
+
+  if (branchNames.length === 0) {
+    return result;
+  }
+
+  // Fetch all PRs in a single call (no --head filter)
+  const stateArg = options?.includeAll ? "--state" : "";
+  const stateVal = options?.includeAll ? "all" : "";
+
+  const ghResult =
+    await $`gh pr list ${stateArg} ${stateVal} --json number,url,state,title,headRefName`
+      .quiet()
+      .nothrow();
+
+  if (ghResult.exitCode !== 0) {
+    // Return all nulls on error
+    return result;
+  }
+
+  const prs = JSON.parse(ghResult.stdout.toString()) as PRInfoWithHead[];
+
+  // Build a set for O(1) lookup
+  const branchSet = new Set(branchNames);
+
+  // Group PRs by branch, preferring open PRs
+  for (const pr of prs) {
+    if (!branchSet.has(pr.headRefName)) {
+      continue;
+    }
+
+    const existing = result.get(pr.headRefName);
+    // Prefer open PRs over closed/merged
+    if (!existing || (existing.state !== "OPEN" && pr.state === "OPEN")) {
+      // Strip headRefName from the result to match PRInfo interface
+      const { headRefName: _, ...prInfo } = pr;
+      result.set(pr.headRefName, prInfo);
+    }
+  }
+
+  return result;
+}
+
 /**
  * Create a new PR.
  */

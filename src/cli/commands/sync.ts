@@ -12,7 +12,7 @@ import {
 import { getBranchNameConfig, getBranchName, pushBranch } from "../../github/branches.ts";
 import { getTasprConfig, isTempCommit } from "../../git/config.ts";
 import {
-  findPRByBranch,
+  findPRsByBranches,
   createPR,
   deleteRemoteBranch,
   getPRBaseBranch,
@@ -51,21 +51,28 @@ interface MergedPRInfo {
 
 /**
  * Find merged PRs in the stack and clean up their remote branches.
- * Returns units that are NOT merged (i.e., still active).
+ * Returns units that are NOT merged (i.e., still active), along with a map of open PR info.
  * Also retargets any open PRs that were based on the merged branches.
  */
 async function cleanupMergedPRs(
   units: PRUnit[],
   branchConfig: Awaited<ReturnType<typeof getBranchNameConfig>>,
   defaultBranch: string,
-): Promise<{ activeUnits: PRUnit[]; cleanedUp: MergedPRInfo[] }> {
+): Promise<{
+  activeUnits: PRUnit[];
+  cleanedUp: MergedPRInfo[];
+  openPRMap: Map<string, PRInfo | null>;
+}> {
   const merged: MergedPRInfo[] = [];
   const active: { unit: PRUnit; pr: PRInfo | null; branchName: string }[] = [];
 
+  // Batch fetch all PR info in a single API call
+  const branchNames = units.map((u) => getBranchName(u.id, branchConfig));
+  const prMap = await findPRsByBranches(branchNames, { includeAll: true });
+
   for (const unit of units) {
     const branchName = getBranchName(unit.id, branchConfig);
-    // Use includeAll to find merged PRs (gh pr list defaults to open only)
-    const pr = await findPRByBranch(branchName, { includeAll: true });
+    const pr = prMap.get(branchName) ?? null;
 
     if (pr?.state === "MERGED") {
       merged.push({ unit, pr, branchName });
@@ -99,7 +106,14 @@ async function cleanupMergedPRs(
     }
   }
 
-  return { activeUnits: active.map((a) => a.unit), cleanedUp: merged };
+  // Build map of open PRs for active units (reuse data from batch fetch)
+  const openPRMap = new Map<string, PRInfo | null>();
+  for (const { branchName, pr } of active) {
+    // Only include open PRs (not closed/merged) for downstream use
+    openPRMap.set(branchName, pr?.state === "OPEN" ? pr : null);
+  }
+
+  return { activeUnits: active.map((a) => a.unit), cleanedUp: merged, openPRMap };
 }
 
 export async function syncCommand(options: SyncOptions = {}): Promise<void> {
@@ -164,7 +178,12 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     const defaultBranch = await getDefaultBranch();
 
     // Check for merged PRs and clean them up
-    const { activeUnits, cleanedUp } = await cleanupMergedPRs(units, branchConfig, defaultBranch);
+    // Also returns openPRMap with PR status for active units (fetched in batch)
+    const { activeUnits, cleanedUp, openPRMap } = await cleanupMergedPRs(
+      units,
+      branchConfig,
+      defaultBranch,
+    );
 
     if (cleanedUp.length > 0) {
       console.log(`✓ Cleaned up ${cleanedUp.length} merged PR(s):`);
@@ -238,11 +257,11 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
       }
       applyUnitIds = result.unitIds;
     } else if (options.interactive) {
-      // Build options for interactive selection
+      // Build options for interactive selection using cached PR data
       const selectOptions: OpenSelectOption[] = [];
       for (const unit of activeUnits) {
         const headBranch = getBranchName(unit.id, branchConfig);
-        const existingPR = await findPRByBranch(headBranch);
+        const existingPR = openPRMap.get(headBranch) ?? null;
         const isTemp = isTempCommit(unit.title, tasprConfig.tempCommitPrefixes);
 
         selectOptions.push({
@@ -278,8 +297,8 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
       const headCommit = asserted(unit.commits.at(-1));
       const status = asserted(syncStatuses.get(unit.id));
 
-      // Check for existing PR first to decide whether to push
-      const existingPR = await findPRByBranch(headBranch);
+      // Use cached PR data from cleanupMergedPRs batch fetch
+      const existingPR = openPRMap.get(headBranch) ?? null;
 
       // Only push if:
       // 1. PR exists and needs update, OR
