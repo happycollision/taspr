@@ -41,12 +41,11 @@ export function detectPRUnits(commits: CommitWithTrailers[], titles: GroupTitles
         if (currentGroup) {
           units.push(currentGroup);
         }
-        // Use title from ref storage, fall back to first commit subject
-        const title: string = titles[groupId] ?? commit.subject;
+        // Use title from ref storage if available
         currentGroup = {
           type: "group",
           id: groupId,
-          title,
+          title: titles[groupId],
           commitIds: commitId ? [commitId] : [],
           commits: [commit.hash],
           subjects: [commit.subject],

@@ -122,9 +122,10 @@ function formatPRUnit(unit: EnrichedPRUnit): string {
     const idDisplay = hasCommitId(unit) ? ` ${dim}(${unit.id})${reset}` : ` ${dim}(no ID)${reset}`;
     lines.push(`  ${statusIcon} ${prNum}${unit.title}${idDisplay}`);
   } else {
-    // Group
-    const groupIdDisplay = hasCommitId(unit) ? `[${unit.id}]` : "(no commit ID yet)";
-    lines.push(`  ${statusIcon} ${prNum}${unit.title} ${groupIdDisplay}`);
+    // Group - show title (or "(unnamed)" if no title stored), plus group ID indicator if missing
+    const displayTitle = unit.title ?? "(unnamed)";
+    const groupIdDisplay = hasCommitId(unit) ? "" : " (no commit ID yet)";
+    lines.push(`  ${statusIcon} ${prNum}${displayTitle}${groupIdDisplay}`);
 
     // List commits with tree structure
     const commitCount = unit.commits.length;

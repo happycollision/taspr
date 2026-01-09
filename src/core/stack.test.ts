@@ -323,7 +323,7 @@ describe("core/stack", () => {
       expect(units[0]?.title).toBe("Custom Group Title");
     });
 
-    test("falls back to first commit subject when title not in ref storage", () => {
+    test("does not have a fallback title if one is not present. (That is view layer stuff)", () => {
       const commits = [
         makeCommit("aaa111", "First commit subject", {
           "Taspr-Commit-Id": "a1",
@@ -337,7 +337,7 @@ describe("core/stack", () => {
 
       const units = detectPRUnits(commits, {});
 
-      expect(units[0]?.title).toBe("First commit subject");
+      expect(units[0]?.title).toBeUndefined();
     });
 
     test("resolves titles independently for multiple groups", () => {
@@ -357,7 +357,7 @@ describe("core/stack", () => {
       const units = detectPRUnits(commits, titles);
 
       expect(units[0]?.title).toBe("Stored Title");
-      expect(units[1]?.title).toBe("Group 2 first commit"); // Falls back to subject
+      expect(units[1]?.title).toBeUndefined();
     });
 
     test("single commits use their subject as title", () => {

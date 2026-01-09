@@ -8,7 +8,7 @@ export interface CommitInfo {
 export interface PRUnit {
   type: "single" | "group";
   id: string;
-  title: string;
+  title: string | undefined;
   commitIds: string[];
   commits: string[];
   subjects: string[];

@@ -179,10 +179,29 @@ describe("cli/commands/view", () => {
 
       const output = await formatStackView(units, "main", 2);
 
-      // Should show (no commit ID yet) for the group header and (no ID) for each commit
-      expect(output).toContain("(no commit ID yet)"); // group header
+      // Group header no longer shows ID, just the title
+      expect(output).toContain("Feature group");
+      expect(output).not.toContain("group1");
+      // Should show (no ID) for each commit
       const noIdMatches = output.match(/\(no ID\)/g);
       expect(noIdMatches?.length).toBe(2); // twice for commits
+    });
+
+    test("shows '(unnamed)' for group without a name", async () => {
+      const units: EnrichedPRUnit[] = [
+        {
+          type: "group",
+          id: "group1",
+          title: undefined,
+          commitIds: [], // No commit IDs yet
+          commits: ["abc123", "def456"],
+          subjects: ["First commit", "Second commit"],
+        },
+      ];
+
+      const output = await formatStackView(units, "main", 2);
+
+      expect(output).toContain("(unnamed)");
     });
 
     test("shows mixed commit IDs in group", async () => {
