@@ -16,19 +16,30 @@ export interface TasprResult {
   exitCode: number;
 }
 
+/** Extended result that includes the command that was executed */
+export interface CommandResult extends TasprResult {
+  /** The exact CLI invocation that was executed (e.g., "taspr sync --open") */
+  command: string;
+}
+
 // Helper to run taspr commands in a directory
 export async function runTaspr(
   cwd: string,
   command: string,
   args: string[] = [],
-): Promise<TasprResult> {
+): Promise<CommandResult> {
   // Set TASPR_NO_TTY=1 to force non-interactive mode regardless of TTY status
   const result =
     await $`TASPR_NO_TTY=1 bun run ${join(import.meta.dir, "../../src/cli/index.ts")} ${command} ${args}`
       .cwd(cwd)
       .nothrow()
       .quiet();
+
+  // Build the command string for logging/debugging
+  const commandStr = args.length > 0 ? `taspr ${command} ${args.join(" ")}` : `taspr ${command}`;
+
   return {
+    command: commandStr,
     stdout: result.stdout.toString(),
     stderr: result.stderr.toString(),
     exitCode: result.exitCode,
@@ -36,13 +47,19 @@ export async function runTaspr(
 }
 
 // Helper to run taspr sync in a directory
-export async function runSync(cwd: string, options: { open?: boolean } = {}): Promise<TasprResult> {
+export async function runSync(
+  cwd: string,
+  options: { open?: boolean } = {},
+): Promise<CommandResult> {
   const args = options.open ? ["--open"] : [];
   return runTaspr(cwd, "sync", args);
 }
 
 // Helper to run taspr land in a directory
-export async function runLand(cwd: string, options: { all?: boolean } = {}): Promise<TasprResult> {
+export async function runLand(
+  cwd: string,
+  options: { all?: boolean } = {},
+): Promise<CommandResult> {
   const args = options.all ? ["--all"] : [];
   return runTaspr(cwd, "land", args);
 }
@@ -51,7 +68,7 @@ export async function runLand(cwd: string, options: { all?: boolean } = {}): Pro
 export async function runClean(
   cwd: string,
   options: { dryRun?: boolean; force?: boolean } = {},
-): Promise<TasprResult> {
+): Promise<CommandResult> {
   const args: string[] = [];
   if (options.dryRun) args.push("--dry-run");
   if (options.force) args.push("--force");
@@ -59,7 +76,10 @@ export async function runClean(
 }
 
 // Helper to run taspr view in a directory
-export async function runView(cwd: string, options: { all?: boolean } = {}): Promise<TasprResult> {
+export async function runView(
+  cwd: string,
+  options: { all?: boolean } = {},
+): Promise<CommandResult> {
   const args = options.all ? ["--all"] : [];
   return runTaspr(cwd, "view", args);
 }
