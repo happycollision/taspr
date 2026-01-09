@@ -21,6 +21,7 @@ type StoryEntry = { type: "narrate"; text: string } | { type: "command"; result:
 interface StorySection {
   testName: string;
   testId?: string;
+  sectionId: string;
   entries: StoryEntry[];
 }
 
@@ -68,6 +69,14 @@ function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** Convert a test name to a URL-safe slug */
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 /** Format a story section as markdown */
 function formatSection(section: StorySection): string {
   const testId = section.testId;
@@ -87,7 +96,8 @@ function formatSection(section: StorySection): string {
       const sanitizedCommand = sanitizeTestId(result.command, testId);
       lines.push(`### \`${sanitizedCommand}\``);
       lines.push("");
-      lines.push("```");
+      // Tag code fence with sectionId for linking to ANSI file
+      lines.push(`\`\`\`${section.sectionId}`);
       // Combine stdout and stderr, prefer stdout
       const output = result.stdout || result.stderr;
       const sanitizedOutput = sanitizeTestId(stripAnsi(output.trim()), testId);
@@ -144,6 +154,7 @@ function formatSectionAnsi(section: StorySection): string {
 export function createStory(testFileName: string): Story {
   const sections: StorySection[] = [];
   let currentSection: StorySection | null = null;
+  let sectionCounter = 0;
 
   // Derive output filename from test filename
   const baseName = testFileName.replace(/\.test\.ts$/, "").replace(/\.ts$/, "");
@@ -152,9 +163,13 @@ export function createStory(testFileName: string): Story {
     begin(testName: string, testId?: string): void {
       if (!isEnabled()) return;
 
+      sectionCounter++;
+      const sectionId = `${sectionCounter}-${slugify(testName)}`;
+
       currentSection = {
         testName,
         testId,
+        sectionId,
         entries: [],
       };
     },
@@ -185,7 +200,8 @@ export function createStory(testFileName: string): Story {
       // import.meta.dir is tests/helpers, so go up two levels to project root
       const projectRoot = join(import.meta.dir, "../..");
       const outputDir = join(projectRoot, "test-logs");
-      await mkdir(outputDir, { recursive: true });
+      const ansiDir = join(outputDir, baseName);
+      await mkdir(ansiDir, { recursive: true });
 
       // Generate header
       const header = `# ${baseName} Stories\n\n`;
@@ -194,9 +210,11 @@ export function createStory(testFileName: string): Story {
       const mdContent = header + sections.map((s) => formatSection(s)).join("\n");
       await writeFile(join(outputDir, `${baseName}.md`), mdContent);
 
-      // Generate ANSI version (with colors)
-      const ansiContent = header + sections.map((s) => formatSectionAnsi(s)).join("\n");
-      await writeFile(join(outputDir, `${baseName}.ansi`), ansiContent);
+      // Generate individual ANSI files for each section
+      for (const section of sections) {
+        const ansiContent = formatSectionAnsi(section);
+        await writeFile(join(ansiDir, `${section.sectionId}.ansi`), ansiContent);
+      }
     },
   };
 }

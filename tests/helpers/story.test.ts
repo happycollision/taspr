@@ -82,8 +82,8 @@ describe("Story API", () => {
     expect(mdContent).toContain("✓ Success");
     expect(mdContent).not.toContain("\x1b[");
 
-    // ANSI file should preserve colors
-    const ansiContent = await Bun.file(join(testLogsDir, "ansi.ansi")).text();
+    // Individual ANSI file should preserve colors (in ansi/ subdirectory)
+    const ansiContent = await Bun.file(join(testLogsDir, "ansi/1-test-with-colors.ansi")).text();
     expect(ansiContent).toContain("\x1b[32m");
 
     delete process.env.TASPR_STORY_TEST_LOGGING;
