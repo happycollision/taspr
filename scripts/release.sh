@@ -36,6 +36,35 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
   exit 1
 fi
 
+# Validate changelog entry exists
+CHANGELOG_FILE="CHANGELOG.md"
+if [ ! -f "$CHANGELOG_FILE" ]; then
+  echo "Error: $CHANGELOG_FILE not found"
+  exit 1
+fi
+
+# Check for version entry in changelog
+if ! grep -q "## \[$VERSION\]" "$CHANGELOG_FILE"; then
+  echo "Error: No changelog entry found for version $VERSION"
+  echo "Please add a '## [$VERSION]' section to $CHANGELOG_FILE"
+  exit 1
+fi
+
+# Verify changelog has content (not just the header)
+if ! awk -v ver="$VERSION" '
+  BEGIN { found=0; printing=0; has_content=0 }
+  /^## \[/ {
+    if (printing) exit
+    if ($0 ~ "\\[" ver "\\]") { found=1; printing=1; next }
+  }
+  printing && /^### / { has_content=1 }
+  END { exit !has_content }
+' "$CHANGELOG_FILE"; then
+  echo "Error: Changelog entry for $VERSION appears to be empty"
+  echo "Please add content (### Added, ### Changed, etc.) under the '## [$VERSION]' section"
+  exit 1
+fi
+
 # Check for uncommitted changes
 if ! git diff --quiet || ! git diff --staged --quiet; then
   echo "Error: You have uncommitted changes. Please commit or stash them first."
@@ -75,7 +104,7 @@ bun -e "const pkg = require('./package.json'); pkg.version = '$VERSION'; require
 
 # Commit the version bump
 echo "Committing version bump..."
-git add package.json
+git add package.json CHANGELOG.md
 git commit -m "chore: bump version to $VERSION"
 
 # Create the tag

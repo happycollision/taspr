@@ -71,6 +71,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -82,10 +85,27 @@ jobs:
           find artifacts -type f -name 'taspr-*' -exec cp {} release/ \;
           ls -la release/
 
+      - name: Extract release notes from changelog
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+
+          # Extract content between this version and the next version header
+          awk -v ver="$VERSION" '
+            BEGIN { found=0; printing=0 }
+            /^## \[/ {
+              if (printing) exit
+              if ($0 ~ "\\[" ver "\\]") { found=1; printing=1; next }
+            }
+            printing { print }
+          ' CHANGELOG.md > release_notes.md
+
+          echo "Release notes for $VERSION:"
+          cat release_notes.md
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: release/*
-          generate_release_notes: true
+          body_path: release_notes.md
           draft: false
           prerelease: ${{ contains(github.ref, '-') }}

@@ -104,6 +104,21 @@ bun --hot ./index.ts
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
 
+## Changelog
+
+Before releasing, update `CHANGELOG.md`:
+
+1. Move items from `[Unreleased]` to a new version section
+2. Add the release date: `## [X.Y.Z] - YYYY-MM-DD`
+3. Categorize changes using these sections:
+   - **Added**: New user-facing features
+   - **Changed**: Changes to existing functionality
+   - **Fixed**: Bug fixes
+   - **Removed**: Removed features
+   - **Internal**: Developer-only changes (tooling, tests, CI) - not shown prominently to users
+
+The release script will fail if no changelog entry exists for the version.
+
 ## Releasing
 
 Use the release script to cut a new version:
@@ -113,13 +128,15 @@ Use the release script to cut a new version:
 ```
 
 This will:
-1. Validate the version format (semver with optional prerelease)
-2. Check that there are no uncommitted changes
-3. Verify the version is newer than the latest tag (use `--force` to bypass)
-4. Update `package.json` version
-5. Commit the version bump
-6. Create and push the git tag
 
-The GitHub workflow automatically builds binaries for all platforms and creates a release.
+1. Validate the version format (semver with optional prerelease)
+2. Validate a changelog entry exists for the version
+3. Check that there are no uncommitted changes
+4. Verify the version is newer than the latest tag (use `--force` to bypass)
+5. Update `package.json` version
+6. Commit the version bump
+7. Create and push the git tag
+
+The GitHub workflow automatically builds binaries for all platforms and creates a release with notes extracted from `CHANGELOG.md`.
 
 **Version format:** `X.Y.Z` or `X.Y.Z-prerelease` (e.g., `0.1.0`, `0.1.0-alpha.4`, `1.0.0-beta.1`)
