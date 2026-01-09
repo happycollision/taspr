@@ -27,9 +27,10 @@ if git log -1 --format=%B | grep -q "^Taspr-Commit-Id:"; then
 fi
 
 # Generate new ID and add trailer
+# Use --no-verify to skip pre-commit and commit-msg hooks
 NEW_ID=$(openssl rand -hex 4)
 NEW_MSG=$(git log -1 --format=%B | git interpret-trailers --trailer "Taspr-Commit-Id: $NEW_ID")
-git commit --amend --no-edit -m "$NEW_MSG"
+git commit --amend --no-edit --no-verify -m "$NEW_MSG"
 `;
 }
 

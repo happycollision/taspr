@@ -283,7 +283,7 @@ export async function applyGroupSpec(
         cmd += ` | git interpret-trailers ${trailerArgs}`;
       }
 
-      cmd += ') && git commit --amend --no-edit -m "$NEW_MSG"';
+      cmd += ') && git commit --amend --no-edit --no-verify -m "$NEW_MSG"';
 
       todoLines.push(`exec ${cmd}`);
     }
@@ -405,20 +405,20 @@ export async function dissolveGroup(
         // This commit is being assigned the group ID (inheriting the PR)
         // Remove group trailers AND set commit ID to group ID
         todoLines.push(
-          `exec NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group: ${groupId}$" -e "^Taspr-Group-Title:" -e "^Taspr-Commit-Id:" | git interpret-trailers --trailer "Taspr-Commit-Id: ${groupId}") && git commit --amend --no-edit -m "$NEW_MSG"`,
+          `exec NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group: ${groupId}$" -e "^Taspr-Group-Title:" -e "^Taspr-Commit-Id:" | git interpret-trailers --trailer "Taspr-Commit-Id: ${groupId}") && git commit --amend --no-edit --no-verify -m "$NEW_MSG"`,
         );
       } else if (assignGroupIdToCommit && commitId === groupId) {
         // This commit originally donated its ID to the group, but a DIFFERENT
         // commit is being assigned the group ID. Generate a new ID to avoid conflicts.
         const newId = generateCommitId();
         todoLines.push(
-          `exec NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group: ${groupId}$" -e "^Taspr-Group-Title:" -e "^Taspr-Commit-Id:" | git interpret-trailers --trailer "Taspr-Commit-Id: ${newId}") && git commit --amend --no-edit -m "$NEW_MSG"`,
+          `exec NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group: ${groupId}$" -e "^Taspr-Group-Title:" -e "^Taspr-Commit-Id:" | git interpret-trailers --trailer "Taspr-Commit-Id: ${newId}") && git commit --amend --no-edit --no-verify -m "$NEW_MSG"`,
         );
       } else {
         // Just remove Taspr-Group trailer (and legacy Taspr-Group-Title if present)
         // Keep existing Taspr-Commit-Id
         todoLines.push(
-          `exec NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group: ${groupId}$" -e "^Taspr-Group-Title:") && git commit --amend --no-edit -m "$NEW_MSG"`,
+          `exec NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group: ${groupId}$" -e "^Taspr-Group-Title:") && git commit --amend --no-edit --no-verify -m "$NEW_MSG"`,
         );
       }
     }
@@ -472,7 +472,7 @@ export async function addGroupTrailers(
 
     if (commit.hash === targetCommit.hash) {
       // Add Taspr-Group trailer only (title goes to ref storage)
-      const cmd = `NEW_MSG=$(git log -1 --format=%B | git interpret-trailers --trailer "Taspr-Group: ${groupId}") && git commit --amend --no-edit -m "$NEW_MSG"`;
+      const cmd = `NEW_MSG=$(git log -1 --format=%B | git interpret-trailers --trailer "Taspr-Group: ${groupId}") && git commit --amend --no-edit --no-verify -m "$NEW_MSG"`;
       todoLines.push(`exec ${cmd}`);
     }
   }
@@ -513,7 +513,7 @@ export async function removeGroupTrailers(
     if (commit.hash === targetCommit.hash) {
       // Remove Taspr-Group and any legacy Taspr-Group-Title trailers
       todoLines.push(
-        `exec NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group: ${groupId}$" -e "^Taspr-Group-Title:") && git commit --amend --no-edit -m "$NEW_MSG"`,
+        `exec NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group: ${groupId}$" -e "^Taspr-Group-Title:") && git commit --amend --no-edit --no-verify -m "$NEW_MSG"`,
       );
     }
   }
@@ -633,7 +633,7 @@ export async function removeAllGroupTrailers(options: GitOptions = {}): Promise<
     if (hasGroupTrailers) {
       // Remove Taspr-Group and Taspr-Group-Title trailers
       todoLines.push(
-        `exec NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group:" -e "^Taspr-Group-Title:") && git commit --amend --allow-empty --no-edit -m "$NEW_MSG"`,
+        `exec NEW_MSG=$(git log -1 --format=%B | grep -v -e "^Taspr-Group:" -e "^Taspr-Group-Title:") && git commit --amend --allow-empty --no-edit --no-verify -m "$NEW_MSG"`,
       );
     }
   }
