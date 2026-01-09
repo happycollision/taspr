@@ -10,8 +10,8 @@ import packageJson from "../../package.json";
 const program = new Command();
 
 program
-  .name("spry")
-  .description("CLI tool for managing stacked PRs on GitHub")
+  .name("sp")
+  .description("Spry: Stacked PRs and more. Develop with alacrity.")
   .version(packageJson.version);
 
 program
