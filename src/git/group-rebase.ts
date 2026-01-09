@@ -34,11 +34,13 @@ async function runInteractiveRebase(
     await writeFile(scriptPath, script);
     await chmod(scriptPath, "755");
 
+    // Use --no-autosquash to prevent fixup!/amend! commits from being auto-reordered
+    // Use --no-verify to skip pre-commit and commit-msg hooks during rebase
     const result = cwd
-      ? await $`GIT_SEQUENCE_EDITOR=${scriptPath} git -C ${cwd} rebase -i --no-autosquash ${mergeBase}`
+      ? await $`GIT_SEQUENCE_EDITOR=${scriptPath} git -C ${cwd} rebase -i --no-autosquash --no-verify ${mergeBase}`
           .quiet()
           .nothrow()
-      : await $`GIT_SEQUENCE_EDITOR=${scriptPath} git rebase -i --no-autosquash ${mergeBase}`
+      : await $`GIT_SEQUENCE_EDITOR=${scriptPath} git rebase -i --no-autosquash --no-verify ${mergeBase}`
           .quiet()
           .nothrow();
 

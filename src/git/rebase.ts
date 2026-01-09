@@ -66,11 +66,12 @@ export async function injectMissingIds(options: GitOptions = {}): Promise<Inject
     // Run rebase with --exec
     // GIT_SEQUENCE_EDITOR=true prevents the editor from opening
     // Use --no-autosquash to prevent fixup!/amend! commits from being auto-reordered
+    // Use --no-verify to skip pre-commit and commit-msg hooks during rebase
     const result = cwd
-      ? await $`GIT_SEQUENCE_EDITOR=true git -C ${cwd} rebase -i --no-autosquash --exec ${scriptPath} ${mergeBase}`
+      ? await $`GIT_SEQUENCE_EDITOR=true git -C ${cwd} rebase -i --no-autosquash --no-verify --exec ${scriptPath} ${mergeBase}`
           .quiet()
           .nothrow()
-      : await $`GIT_SEQUENCE_EDITOR=true git rebase -i --no-autosquash --exec ${scriptPath} ${mergeBase}`
+      : await $`GIT_SEQUENCE_EDITOR=true git rebase -i --no-autosquash --no-verify --exec ${scriptPath} ${mergeBase}`
           .quiet()
           .nothrow();
 
@@ -133,10 +134,14 @@ export async function rebaseOntoMain(options: GitOptions = {}): Promise<RebaseRe
   const commits = await getStackCommits(options);
   const commitCount = commits.length;
 
-  // Attempt rebase (use --no-autosquash to prevent fixup!/amend! commits from being auto-reordered)
+  // Attempt rebase
+  // Use --no-autosquash to prevent fixup!/amend! commits from being auto-reordered
+  // Use --no-verify to skip pre-commit and commit-msg hooks during rebase
   const result = cwd
-    ? await $`git -C ${cwd} rebase --no-autosquash ${defaultBranchRef}`.quiet().nothrow()
-    : await $`git rebase --no-autosquash ${defaultBranchRef}`.quiet().nothrow();
+    ? await $`git -C ${cwd} rebase --no-autosquash --no-verify ${defaultBranchRef}`
+        .quiet()
+        .nothrow()
+    : await $`git rebase --no-autosquash --no-verify ${defaultBranchRef}`.quiet().nothrow();
 
   if (result.exitCode === 0) {
     return { success: true, commitCount };
