@@ -1,7 +1,8 @@
-import { test, expect, beforeAll, beforeEach, afterEach, describe } from "bun:test";
+import { test, expect, beforeAll, beforeEach, afterEach, afterAll, describe } from "bun:test";
 import { $ } from "bun";
 import { createGitHubFixture, type GitHubFixture } from "../helpers/github-fixture.ts";
 import { repoManager } from "../helpers/local-repo.ts";
+import { createStory } from "../helpers/story.ts";
 import { SKIP_GITHUB_TESTS, SKIP_CI_TESTS, runSync } from "./helpers.ts";
 
 describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration", () => {
@@ -65,15 +66,27 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration", () => {
 
 describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync --open", () => {
   const repos = repoManager({ github: true });
+  const story = createStory("sync.test.ts");
+
+  afterAll(async () => {
+    await story.flush();
+  });
 
   test(
     "skips PR creation for WIP commits",
     async () => {
+      story.begin("skips PR creation for WIP commits", repos.uniqueId);
+      story.narrate(
+        "If you have a commit prefixed with 'WIP:', taspr will push branches but skip opening a PR for it.",
+      );
+
       const repo = await repos.clone({ testName: "wip-skip" });
       await repo.branch("feature/wip-test");
       await repo.commit({ message: "WIP: work in progress" });
 
       const result = await runSync(repo.path, { open: true });
+      story.log(result);
+      story.end();
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain("Skipped PR for 1 temporary commit");
@@ -89,11 +102,18 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync --open", () => {
   test(
     "skips PR creation for fixup! commits",
     async () => {
+      story.begin("skips PR creation for fixup! commits", repos.uniqueId);
+      story.narrate(
+        "Commits prefixed with 'fixup!' are meant to be squashed later, so taspr skips opening PRs for them.",
+      );
+
       const repo = await repos.clone({ testName: "fixup-skip" });
       await repo.branch("feature/fixup-test");
       await repo.commit({ message: "fixup! original commit" });
 
       const result = await runSync(repo.path, { open: true });
+      story.log(result);
+      story.end();
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain("Skipped PR for 1 temporary commit");
@@ -109,12 +129,19 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync --open", () => {
   test(
     "creates PRs for non-temp commits while skipping temp commits in same stack",
     async () => {
+      story.begin("creates PRs for non-temp commits while skipping temp commits", repos.uniqueId);
+      story.narrate(
+        "When a stack has both regular and temporary commits, taspr creates PRs for the regular commits and skips the temporary ones.",
+      );
+
       const repo = await repos.clone({ testName: "mixed-stack" });
       await repo.branch("feature/mixed-test");
       await repo.commit({ message: "Add feature A" }); // should get PR
       await repo.commit({ message: "WIP: still working on B" }); // should be skipped
 
       const result = await runSync(repo.path, { open: true });
+      story.log(result);
+      story.end();
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain("Created 1 PR");
@@ -130,11 +157,16 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync --open", () => {
   test(
     "creates PR for a single commit stack",
     async () => {
+      story.begin("creates PR for a single commit stack", repos.uniqueId);
+      story.narrate("A feature branch with a single commit gets one PR created.");
+
       const repo = await repos.clone({ testName: "single-pr" });
       await repo.branch("feature/test-pr");
       await repo.commit();
 
       const result = await runSync(repo.path, { open: true });
+      story.log(result);
+      story.end();
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain("Created");
@@ -149,6 +181,11 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync --open", () => {
   test(
     "opens PRs for commits already pushed to remote",
     async () => {
+      story.begin("opens PRs for commits already pushed to remote", repos.uniqueId);
+      story.narrate(
+        "If branches were previously pushed without --open, running sync --open later will create PRs for them.",
+      );
+
       const repo = await repos.clone({ testName: "open-existing" });
       await repo.branch("feature/stacked-no-pr");
       await repo.commit();
@@ -156,6 +193,8 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync --open", () => {
 
       // Run taspr sync WITHOUT --open (just push branches)
       const syncResult = await runSync(repo.path, { open: false });
+      story.narrate("First, sync without --open to just push branches:");
+      story.log(syncResult);
       expect(syncResult.exitCode).toBe(0);
 
       // Verify no PRs were created yet (search by uniqueId to isolate from other tests)
@@ -163,7 +202,11 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync --open", () => {
       expect(prsBefore.length).toBe(0);
 
       // Now run taspr sync WITH --open
+      story.narrate("Then, sync with --open to create PRs:");
       const openResult = await runSync(repo.path, { open: true });
+      story.log(openResult);
+      story.end();
+
       expect(openResult.exitCode).toBe(0);
 
       // Verify PRs were created

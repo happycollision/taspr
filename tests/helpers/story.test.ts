@@ -1,16 +1,10 @@
-import { test, expect, describe, afterAll } from "bun:test";
+import { test, expect, describe } from "bun:test";
 import { createStory } from "./story.ts";
-import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
 describe("Story API", () => {
   // test-logs is at project root, not in tests/
   const testLogsDir = join(import.meta.dir, "../../test-logs");
-
-  afterAll(async () => {
-    // Clean up test output
-    await rm(testLogsDir, { recursive: true, force: true });
-  });
 
   test("no-ops when env var is not set", async () => {
     const story = createStory("noop.test.ts");
@@ -38,9 +32,9 @@ describe("Story API", () => {
     process.env.TASPR_STORY_TEST_LOGGING = "1";
 
     const testId = "happy-penguin-x3f";
-    const story = createStory("sanitize.test.ts", testId);
+    const story = createStory("sanitize.test.ts");
 
-    story.begin("test with IDs");
+    story.begin("test with IDs", testId);
     story.narrate("Testing ID sanitization.");
     story.log({
       command: "taspr sync",

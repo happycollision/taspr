@@ -20,12 +20,13 @@ type StoryEntry = { type: "narrate"; text: string } | { type: "command"; result:
 /** Story section for a single test */
 interface StorySection {
   testName: string;
+  testId?: string;
   entries: StoryEntry[];
 }
 
 export interface Story {
-  /** Start a new test story section */
-  begin(testName: string): void;
+  /** Start a new test story section. testId is used to sanitize dynamic IDs from output. */
+  begin(testName: string, testId?: string): void;
   /** Add narrative text to the current story */
   narrate(text: string): void;
   /** Log a command result */
@@ -68,7 +69,8 @@ function escapeRegex(str: string): string {
 }
 
 /** Format a story section as markdown */
-function formatSection(section: StorySection, testId?: string): string {
+function formatSection(section: StorySection): string {
+  const testId = section.testId;
   const lines: string[] = [];
 
   lines.push("---");
@@ -101,7 +103,8 @@ function formatSection(section: StorySection, testId?: string): string {
 }
 
 /** Format a story section as markdown with ANSI colors preserved */
-function formatSectionAnsi(section: StorySection, testId?: string): string {
+function formatSectionAnsi(section: StorySection): string {
+  const testId = section.testId;
   const lines: string[] = [];
 
   lines.push("---");
@@ -137,9 +140,8 @@ function formatSectionAnsi(section: StorySection, testId?: string): string {
  * Create a story logger for a test file.
  *
  * @param testFileName - Name of the test file (e.g., "sync.test.ts")
- * @param testId - Optional test ID to sanitize from output (e.g., "happy-penguin-x3f")
  */
-export function createStory(testFileName: string, testId?: string): Story {
+export function createStory(testFileName: string): Story {
   const sections: StorySection[] = [];
   let currentSection: StorySection | null = null;
 
@@ -147,11 +149,12 @@ export function createStory(testFileName: string, testId?: string): Story {
   const baseName = testFileName.replace(/\.test\.ts$/, "").replace(/\.ts$/, "");
 
   return {
-    begin(testName: string): void {
+    begin(testName: string, testId?: string): void {
       if (!isEnabled()) return;
 
       currentSection = {
         testName,
+        testId,
         entries: [],
       };
     },
@@ -188,11 +191,11 @@ export function createStory(testFileName: string, testId?: string): Story {
       const header = `# ${baseName} Stories\n\n`;
 
       // Generate markdown (clean)
-      const mdContent = header + sections.map((s) => formatSection(s, testId)).join("\n");
+      const mdContent = header + sections.map((s) => formatSection(s)).join("\n");
       await writeFile(join(outputDir, `${baseName}.md`), mdContent);
 
       // Generate ANSI version (with colors)
-      const ansiContent = header + sections.map((s) => formatSectionAnsi(s, testId)).join("\n");
+      const ansiContent = header + sections.map((s) => formatSectionAnsi(s)).join("\n");
       await writeFile(join(outputDir, `${baseName}.ansi`), ansiContent);
     },
   };
