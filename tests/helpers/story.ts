@@ -77,10 +77,15 @@ function slugify(text: string): string {
     .replace(/^-|-$/g, "");
 }
 
-/** Format a story section as markdown */
-function formatSection(section: StorySection): string {
+/** Format a story section as markdown, returning content and raw outputs for ANSI files */
+function formatSection(
+  section: StorySection,
+  baseName: string,
+): { markdown: string; ansiOutputs: { id: string; content: string }[] } {
   const testId = section.testId;
   const lines: string[] = [];
+  const ansiOutputs: { id: string; content: string }[] = [];
+  let outputCounter = 0;
 
   lines.push("---");
   lines.push("");
@@ -92,12 +97,16 @@ function formatSection(section: StorySection): string {
       lines.push(entry.text);
       lines.push("");
     } else {
+      outputCounter++;
       const { result } = entry;
       const sanitizedCommand = sanitizeTestId(result.command, testId);
       lines.push(`### \`${sanitizedCommand}\``);
       lines.push("");
-      // Tag code fence with sectionId for linking to ANSI file
-      lines.push(`\`\`\`${section.sectionId}`);
+      // Tag code fence with file path to ANSI file
+      const ansiId =
+        outputCounter === 1 ? section.sectionId : `${section.sectionId}-${outputCounter}`;
+      const ansiPath = `${baseName}/${ansiId}.ansi`;
+      lines.push(`\`\`\`txt file=${ansiPath}`);
       // Combine stdout and stderr, prefer stdout
       const output = result.stdout || result.stderr;
       const sanitizedOutput = sanitizeTestId(stripAnsi(output.trim()), testId);
@@ -106,44 +115,14 @@ function formatSection(section: StorySection): string {
       }
       lines.push("```");
       lines.push("");
+
+      // Store raw ANSI output (sanitized but with colors preserved)
+      const rawAnsiOutput = sanitizeTestId(output.trim(), testId);
+      ansiOutputs.push({ id: ansiId, content: rawAnsiOutput });
     }
   }
 
-  return lines.join("\n");
-}
-
-/** Format a story section as markdown with ANSI colors preserved */
-function formatSectionAnsi(section: StorySection): string {
-  const testId = section.testId;
-  const lines: string[] = [];
-
-  lines.push("---");
-  lines.push("");
-  lines.push(`## ${section.testName}`);
-  lines.push("");
-
-  for (const entry of section.entries) {
-    if (entry.type === "narrate") {
-      lines.push(entry.text);
-      lines.push("");
-    } else {
-      const { result } = entry;
-      const sanitizedCommand = sanitizeTestId(result.command, testId);
-      lines.push(`### \`${sanitizedCommand}\``);
-      lines.push("");
-      lines.push("```");
-      // Combine stdout and stderr, prefer stdout - keep ANSI codes
-      const output = result.stdout || result.stderr;
-      const sanitizedOutput = sanitizeTestId(output.trim(), testId);
-      if (sanitizedOutput) {
-        lines.push(sanitizedOutput);
-      }
-      lines.push("```");
-      lines.push("");
-    }
-  }
-
-  return lines.join("\n");
+  return { markdown: lines.join("\n"), ansiOutputs };
 }
 
 /**
@@ -164,7 +143,7 @@ export function createStory(testFileName: string): Story {
       if (!isEnabled()) return;
 
       sectionCounter++;
-      const sectionId = `${sectionCounter}-${slugify(testName)}`;
+      const sectionId = `${slugify(testName)}-${String(sectionCounter).padStart(2, "0")}`;
 
       currentSection = {
         testName,
@@ -206,15 +185,21 @@ export function createStory(testFileName: string): Story {
       // Generate header
       const header = `# ${baseName} Stories\n\n`;
 
-      // Generate markdown (clean)
-      const mdContent = header + sections.map((s) => formatSection(s)).join("\n");
-      await writeFile(join(outputDir, `${baseName}.md`), mdContent);
-
-      // Generate individual ANSI files for each section
+      // Process all sections
+      const markdownParts: string[] = [];
       for (const section of sections) {
-        const ansiContent = formatSectionAnsi(section);
-        await writeFile(join(ansiDir, `${section.sectionId}.ansi`), ansiContent);
+        const { markdown, ansiOutputs } = formatSection(section, baseName);
+        markdownParts.push(markdown);
+
+        // Write individual ANSI files for each command output
+        for (const { id, content } of ansiOutputs) {
+          await writeFile(join(ansiDir, `${id}.ansi`), content);
+        }
       }
+
+      // Write markdown file
+      const mdContent = header + markdownParts.join("\n");
+      await writeFile(join(outputDir, `${baseName}.md`), mdContent);
     },
   };
 }

@@ -77,14 +77,15 @@ describe("Story API", () => {
 
     await story.flush();
 
-    // MD file should have ANSI stripped
+    // MD file should have ANSI stripped and use sh language tag
     const mdContent = await Bun.file(join(testLogsDir, "ansi.md")).text();
     expect(mdContent).toContain("✓ Success");
     expect(mdContent).not.toContain("\x1b[");
+    expect(mdContent).toContain("```txt file=ansi/test-with-colors-01.ansi");
 
-    // Individual ANSI file should preserve colors (in ansi/ subdirectory)
-    const ansiContent = await Bun.file(join(testLogsDir, "ansi/1-test-with-colors.ansi")).text();
-    expect(ansiContent).toContain("\x1b[32m");
+    // Individual ANSI file should be raw output with colors preserved
+    const ansiContent = await Bun.file(join(testLogsDir, "ansi/test-with-colors-01.ansi")).text();
+    expect(ansiContent).toBe("\x1b[32m✓\x1b[0m Success");
 
     delete process.env.TASPR_STORY_TEST_LOGGING;
   });
