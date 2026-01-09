@@ -35,6 +35,7 @@ import {
   purgeOrphanedTitles,
 } from "../../git/group-titles.ts";
 import { openSelect, type OpenSelectOption } from "../../tui/open-select.ts";
+import { isTTY } from "../../tui/terminal.ts";
 
 export interface SyncOptions {
   open?: boolean;
@@ -179,11 +180,13 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
 
     // Check for merged PRs and clean them up
     // Also returns openPRMap with PR status for active units (fetched in batch)
+    if (isTTY()) process.stdout.write("Fetching PR status...");
     const { activeUnits, cleanedUp, openPRMap } = await cleanupMergedPRs(
       units,
       branchConfig,
       defaultBranch,
     );
+    if (isTTY()) process.stdout.write("\r\x1b[K"); // Clear the line
 
     if (cleanedUp.length > 0) {
       console.log(`✓ Cleaned up ${cleanedUp.length} merged PR(s):`);
@@ -198,7 +201,9 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     }
 
     // Check what needs syncing (only for non-merged units)
+    if (isTTY()) process.stdout.write("Checking branch status...");
     const syncStatuses = await getAllSyncStatuses(activeUnits, branchConfig);
+    if (isTTY()) process.stdout.write("\r\x1b[K"); // Clear the line
     const summary = getSyncSummary(syncStatuses);
 
     // When --open is specified, we need to check for missing PRs even if branches are up-to-date
