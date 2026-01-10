@@ -416,6 +416,10 @@ sp clean --dry-run  # Preview first
 sp clean            # Delete orphaned branches
 ```
 
+## Limitations
+
+- **No concurrent operation support**: Don't run multiple `sp` commands simultaneously in the same local clone. Not sure why anyone would do this anyway.
+
 ## Development
 
 ```bash
