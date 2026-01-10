@@ -55,15 +55,16 @@ program
       "By default, deletes branches whose exact commit SHA is reachable from main\n" +
       "(fast-forward or rebase merges). These are safe to delete since the exact\n" +
       "commit content is preserved in main.\n\n" +
-      "With --force, also deletes branches where only the Spry-Commit-Id trailer\n" +
-      "matches a commit in main. This handles squash merges or amended commits,\n" +
-      "but the branch may contain different content than what landed.",
+      "With --unsafe, also shows branches where only the Spry-Commit-Id trailer\n" +
+      "matches (squash merges or amended commits). These require --unsafe --force\n" +
+      "to delete since the branch may contain different content than what landed.",
   )
   .option("--dry-run", "Preview branches that would be deleted without deleting them")
   .option(
-    "--force",
-    "Also delete branches matched by commit-id only (use when commits were squashed or amended)",
+    "--unsafe",
+    "Include branches matched by commit-id only (implies --dry-run unless --force)",
   )
+  .option("--force", "Actually delete branches (required with --unsafe, conflicts with --dry-run)")
   .action((options) => cleanCommand(options));
 
 // Group command with subcommands

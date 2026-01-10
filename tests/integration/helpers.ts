@@ -69,10 +69,11 @@ export async function runLand(
 // Helper to run sp clean in a directory
 export async function runClean(
   cwd: string,
-  options: { dryRun?: boolean; force?: boolean } = {},
+  options: { dryRun?: boolean; force?: boolean; unsafe?: boolean } = {},
 ): Promise<CommandResult> {
   const args: string[] = [];
   if (options.dryRun) args.push("--dry-run");
+  if (options.unsafe) args.push("--unsafe");
   if (options.force) args.push("--force");
   return runSpry(cwd, "clean", args);
 }

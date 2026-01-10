@@ -11,6 +11,7 @@ import { deleteRemoteBranch } from "../../github/pr.ts";
 export interface CleanOptions {
   dryRun?: boolean;
   force?: boolean;
+  unsafe?: boolean;
 }
 
 type OrphanedReason = "sha-merged" | "commit-id-landed";
@@ -143,23 +144,55 @@ async function findOrphanedBranches(
 
 export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
   try {
+    // Validate flag combinations
+    if (options.force && options.dryRun) {
+      console.error("✗ Cannot use --force with --dry-run");
+      process.exit(1);
+    }
+
     const branchConfig = await getBranchNameConfig();
     const defaultBranch = await getDefaultBranch();
+
+    // --unsafe implies --dry-run unless --force is also specified
+    const isDryRun = options.dryRun || (options.unsafe && !options.force);
+    const includeUnsafe = options.unsafe;
 
     console.log("Scanning for orphaned branches...\n");
 
     const orphaned = await findOrphanedBranches(branchConfig, defaultBranch);
 
-    if (orphaned.length === 0) {
-      console.log("✓ No orphaned branches found");
-      return;
-    }
-
     // Separate safe (SHA-merged) from unsafe (commit-id only) branches
     const safeBranches = orphaned.filter((b) => b.reason === "sha-merged");
     const unsafeBranches = orphaned.filter((b) => b.reason === "commit-id-landed");
 
-    if (options.dryRun) {
+    // Handle --force without --unsafe: nothing extra to force
+    if (
+      options.force &&
+      !options.unsafe &&
+      safeBranches.length === 0 &&
+      unsafeBranches.length > 0
+    ) {
+      console.log("✓ No merged branches found");
+      console.log(`\n💡 Found ${unsafeBranches.length} branch(es) matched by commit-id only.`);
+      console.log("   Use --unsafe --force to delete these (original content may differ).");
+      return;
+    }
+
+    if (options.force && !options.unsafe && unsafeBranches.length === 0) {
+      if (safeBranches.length === 0) {
+        console.log("✓ No orphaned branches found (nothing to force)");
+      }
+      // If there are safe branches but no unsafe ones, --force has no effect
+      // Continue to delete safe branches normally
+    }
+
+    if (safeBranches.length === 0 && (!includeUnsafe || unsafeBranches.length === 0)) {
+      console.log("✓ No orphaned branches found");
+      return;
+    }
+
+    if (isDryRun) {
+      // Dry run: just list what would be deleted
       if (safeBranches.length > 0) {
         console.log(`Found ${safeBranches.length} merged branch(es):`);
         for (const branch of safeBranches) {
@@ -167,26 +200,27 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
         }
       }
 
-      if (unsafeBranches.length > 0) {
+      if (includeUnsafe && unsafeBranches.length > 0) {
         if (safeBranches.length > 0) console.log("");
-        console.log(
-          `Found ${unsafeBranches.length} branch(es) with matching commit-id (requires --force):`,
-        );
+        console.log(`Found ${unsafeBranches.length} branch(es) matched by commit-id (unsafe):`);
         for (const branch of unsafeBranches) {
           console.log(`  ${branch.name} (${branch.displayReason})`);
         }
       }
 
       console.log("\nRun without --dry-run to delete branches.");
-      if (unsafeBranches.length > 0) {
-        console.log("Use --force to also delete branches detected by commit-id only.");
+      if (includeUnsafe && unsafeBranches.length > 0) {
+        console.log("Use --unsafe --force to also delete branches matched by commit-id.");
+      } else if (!includeUnsafe && unsafeBranches.length > 0) {
+        console.log(
+          `💡 ${unsafeBranches.length} additional branch(es) found by commit-id. Use --unsafe to include them.`,
+        );
       }
       return;
     }
 
     // Delete branches
     let deleted = 0;
-    let skipped = 0;
     const errors: string[] = [];
 
     // Always delete safe branches
@@ -200,19 +234,17 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
       }
     }
 
-    // Only delete unsafe branches if --force is specified
-    if (options.force) {
+    // Delete unsafe branches only if --unsafe --force
+    if (includeUnsafe && options.force) {
       for (const branch of unsafeBranches) {
         try {
           await deleteRemoteBranch(branch.name);
           deleted++;
-          console.log(`✓ Deleted ${branch.name} (forced)`);
+          console.log(`✓ Deleted ${branch.name} (unsafe)`);
         } catch (err) {
           errors.push(`  ${branch.name}: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
-    } else {
-      skipped = unsafeBranches.length;
     }
 
     // Summary
@@ -221,12 +253,10 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
       console.log(`✓ Deleted ${deleted} orphaned branch(es)`);
     }
 
-    if (skipped > 0) {
-      console.log(`⚠ Skipped ${skipped} branch(es) detected by commit-id only:`);
-      for (const branch of unsafeBranches) {
-        console.log(`  ${branch.name}`);
-      }
-      console.log("\nUse --force to delete these (may lose original commit content).");
+    if (!includeUnsafe && unsafeBranches.length > 0) {
+      console.log(
+        `\n💡 ${unsafeBranches.length} additional branch(es) found by commit-id. Use --unsafe --force to delete them.`,
+      );
     }
 
     if (errors.length > 0) {

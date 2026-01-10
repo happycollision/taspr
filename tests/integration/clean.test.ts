@@ -2,9 +2,20 @@ import { expect, describe } from "bun:test";
 import { $ } from "bun";
 import { repoManager } from "../helpers/local-repo.ts";
 import { createStoryTest } from "../helpers/story-test.ts";
-import { SKIP_GITHUB_TESTS, SKIP_CI_TESTS, runSync, runClean } from "./helpers.ts";
+import { SKIP_GITHUB_TESTS, SKIP_CI_TESTS, runSync, runClean, runSpry } from "./helpers.ts";
 
 const { test } = createStoryTest("clean.test.ts");
+
+describe("Clean command", () => {
+  test("Clean command help text", async (story) => {
+    story.narrate("The clean command should display help text with usage information.");
+
+    const result = await runSpry(process.cwd(), "clean", ["--help"]);
+    story.log(result);
+    expect(result.stderr).toBeEmpty();
+    expect(result.stdout).toContain("Usage:");
+  });
+});
 
 describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: clean command", () => {
   const repos = repoManager({ github: true });
@@ -239,39 +250,40 @@ Spry-Commit-Id: ${commitId}"`.quiet();
           .nothrow();
       expect(isAncestor.exitCode).not.toBe(0); // Should NOT be an ancestor
 
-      // Run clean with --dry-run - should detect via commit-id trailer
+      // Run clean with --unsafe (implies --dry-run) - should detect via commit-id trailer
       story.narrate(
-        "The branch SHA differs from main but shares the same Spry-Commit-Id. With --dry-run:",
+        "The branch SHA differs from main but shares the same Spry-Commit-Id. With --unsafe:",
       );
-      const cleanResult = await runClean(repo.path, { dryRun: true });
+      const cleanResult = await runClean(repo.path, { unsafe: true });
       story.log(cleanResult);
 
       expect(cleanResult.exitCode).toBe(0);
       expect(cleanResult.stdout).toContain("commit-id");
-      expect(cleanResult.stdout).toContain("requires --force");
+      expect(cleanResult.stdout).toContain("unsafe");
       expect(cleanResult.stdout).toContain(pr.headRefName);
 
-      // Run clean WITHOUT --force - should skip this branch
-      story.narrate("Without --force, the branch is skipped:");
-      const cleanNoForce = await runClean(repo.path);
-      story.log(cleanNoForce);
-      expect(cleanNoForce.exitCode).toBe(0);
-      expect(cleanNoForce.stdout).toContain("Skipped");
-      expect(cleanNoForce.stdout).toContain("--force");
+      // Run clean WITHOUT --unsafe - should not show this branch
+      story.narrate("Without --unsafe, the branch is not listed:");
+      const cleanNoUnsafe = await runClean(repo.path);
+      story.log(cleanNoUnsafe);
+      expect(cleanNoUnsafe.exitCode).toBe(0);
+      // Should hint about additional branches found by commit-id
+      expect(cleanNoUnsafe.stdout).toContain("commit-id");
+      expect(cleanNoUnsafe.stdout).toContain("--unsafe");
 
       // Verify branch was NOT deleted
       const branchStillExists =
         await $`gh api repos/${repo.github.owner}/${repo.github.repo}/branches/${pr.headRefName}`.nothrow();
       expect(branchStillExists.exitCode).toBe(0);
 
-      // Run clean WITH --force - should delete the branch
-      story.narrate("With --force, the branch is deleted:");
-      const cleanWithForce = await runClean(repo.path, { force: true });
+      // Run clean WITH --unsafe --force - should delete the branch
+      story.narrate("With --unsafe --force, the branch is deleted:");
+      const cleanWithForce = await runClean(repo.path, { unsafe: true, force: true });
       story.log(cleanWithForce);
 
       expect(cleanWithForce.exitCode).toBe(0);
       expect(cleanWithForce.stdout).toContain("Deleted");
-      expect(cleanWithForce.stdout).toContain("forced");
+      expect(cleanWithForce.stdout).toContain("unsafe");
 
       // Poll until branch is deleted (GitHub API is eventually consistent)
       const branchGone = await repo.waitForBranchGone(pr.headRefName);
