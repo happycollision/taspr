@@ -91,8 +91,6 @@ function formatSection(
   const ansiOutputs: { id: string; content: string }[] = [];
   let outputCounter = 0;
 
-  lines.push("---");
-  lines.push("");
   lines.push(`## ${section.testName}`);
   lines.push("");
 
