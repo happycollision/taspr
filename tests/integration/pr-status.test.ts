@@ -16,7 +16,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR checks status", () =>
   test.skipIf(SKIP_CI_TESTS)(
     "returns 'passing' for PR with passing CI checks",
     async () => {
-      story.begin("returns 'passing' for PR with passing CI checks", repos.uniqueId);
+      story.begin("CI checks passing", repos.uniqueId);
       story.narrate("After CI passes on a PR, getPRChecksStatus returns 'passing'.");
 
       const repo = await repos.clone({ testName: "checks-pass" });
@@ -43,7 +43,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR checks status", () =>
   test.skipIf(SKIP_CI_TESTS)(
     "returns 'failing' for PR with failing CI checks",
     async () => {
-      story.begin("returns 'failing' for PR with failing CI checks", repos.uniqueId);
+      story.begin("CI checks failing", repos.uniqueId);
       story.narrate("When CI fails on a PR, getPRChecksStatus returns 'failing'.");
 
       const repo = await repos.clone({ testName: "checks-fail" });
@@ -70,7 +70,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR checks status", () =>
   test.skipIf(SKIP_CI_TESTS)(
     "returns 'pending' for PR with running CI checks",
     async () => {
-      story.begin("returns 'pending' for PR with running CI checks", repos.uniqueId);
+      story.begin("CI checks pending", repos.uniqueId);
       story.narrate("While CI is still running on a PR, getPRChecksStatus returns 'pending'.");
 
       const repo = await repos.clone({ testName: "checks-pending" });

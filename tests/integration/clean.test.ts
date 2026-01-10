@@ -15,7 +15,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: clean command", () => {
   test(
     "reports no orphaned branches when none exist",
     async () => {
-      story.begin("reports no orphaned branches when none exist", repos.uniqueId);
+      story.begin("No orphaned branches", repos.uniqueId);
       story.narrate(
         "When there are no merged PRs with leftover branches, sp clean reports nothing to clean up.",
       );
@@ -36,7 +36,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: clean command", () => {
   test(
     "--dry-run shows orphaned branches without deleting",
     async () => {
-      story.begin("--dry-run shows orphaned branches without deleting", repos.uniqueId);
+      story.begin("Dry run preview", repos.uniqueId);
       story.narrate(
         "The --dry-run flag lets you preview which branches would be cleaned up without actually deleting them.",
       );
@@ -85,7 +85,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: clean command", () => {
   test.skipIf(SKIP_CI_TESTS)(
     "deletes orphaned branches from merged PRs",
     async () => {
-      story.begin("deletes orphaned branches from merged PRs", repos.uniqueId);
+      story.begin("Deleting orphaned branches", repos.uniqueId);
       story.narrate(
         "When a PR is merged but the branch wasn't deleted, sp clean removes the orphaned remote branch.",
       );
@@ -134,7 +134,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: clean command", () => {
   test(
     "detects multiple orphaned branches",
     async () => {
-      story.begin("detects multiple orphaned branches", repos.uniqueId);
+      story.begin("Multiple orphaned branches", repos.uniqueId);
       story.narrate(
         "When multiple PRs are merged with branches left behind, sp clean detects all of them.",
       );
@@ -186,10 +186,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: clean command", () => {
   test(
     "detects orphaned branches when commit is amended and pushed to main directly",
     async () => {
-      story.begin(
-        "detects orphaned branches when commit is amended and pushed to main directly",
-        repos.uniqueId,
-      );
+      story.begin("Amended commit detection via trailer", repos.uniqueId);
       story.narrate(
         "When a commit is amended and pushed directly to main (bypassing the PR), " +
           "sp clean can still detect the orphaned branch via the Spry-Commit-Id trailer.",

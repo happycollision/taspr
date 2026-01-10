@@ -15,7 +15,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: land", () => {
   test.skipIf(SKIP_CI_TESTS)(
     "lands a single PR and deletes the branch",
     async () => {
-      story.begin("lands a single PR and deletes the branch", repos.uniqueId);
+      story.begin("Landing a single PR", repos.uniqueId);
       story.narrate(
         "When you run `sp land` on a branch with an approved PR, it merges to main and cleans up the remote branch.",
       );
@@ -180,7 +180,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: land", () => {
   test(
     "reports no open PRs when stack has no PRs",
     async () => {
-      story.begin("reports no open PRs when stack has no PRs", repos.uniqueId);
+      story.begin("No open PRs to land", repos.uniqueId);
       story.narrate(
         "If you try to land a stack that has no open PRs, sp tells you there's nothing to land.",
       );

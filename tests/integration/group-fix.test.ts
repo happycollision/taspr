@@ -29,7 +29,7 @@ describe("sp group --fix", () => {
   });
 
   test("reports valid stack when no issues found", async () => {
-    story.begin("reports valid stack when no issues found");
+    story.begin("Valid stack with no issues");
     story.narrate("When all groups in a stack are valid, sp group --fix reports no issues.");
 
     const repo = await repos.create();
@@ -45,7 +45,7 @@ describe("sp group --fix", () => {
   });
 
   test("fixes split group by dissolving in non-TTY mode", async () => {
-    story.begin("fixes split group by dissolving in non-TTY mode");
+    story.begin("Split group auto-dissolve (non-TTY)");
     story.narrate(
       "A 'split group' occurs when commits with the same group ID are not contiguous. " +
         "In non-TTY mode, --fix automatically dissolves the group by removing trailers.",
@@ -74,7 +74,7 @@ describe("sp group --fix", () => {
   });
 
   test("handles empty stack gracefully", async () => {
-    story.begin("handles empty stack gracefully");
+    story.begin("Empty stack handling");
     story.narrate("Running group --fix on a branch with no commits above main exits cleanly.");
 
     const repo = await repos.create();
@@ -89,7 +89,7 @@ describe("sp group --fix", () => {
   });
 
   test("handles stack without any group trailers", async () => {
-    story.begin("handles stack without any group trailers");
+    story.begin("Stack without groups");
     story.narrate("A stack with Spry-Commit-Id trailers but no groups is valid.");
 
     const repo = await repos.create();
@@ -104,7 +104,7 @@ describe("sp group --fix", () => {
   });
 
   test("--fix=dissolve removes split group trailers", async () => {
-    story.begin("--fix=dissolve removes split group trailers");
+    story.begin("Explicit dissolve with --fix=dissolve");
     story.narrate(
       "Using --fix=dissolve explicitly dissolves a split group by removing its trailers.",
     );

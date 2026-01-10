@@ -75,7 +75,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync --open", () => {
   test(
     "skips PR creation for WIP commits",
     async () => {
-      story.begin("skips PR creation for WIP commits", repos.uniqueId);
+      story.begin("Skipping WIP commits", repos.uniqueId);
       story.narrate(
         "If you have a commit prefixed with 'WIP:', sp will push branches but skip opening a PR for it.",
       );
@@ -102,7 +102,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync --open", () => {
   test(
     "skips PR creation for fixup! commits",
     async () => {
-      story.begin("skips PR creation for fixup! commits", repos.uniqueId);
+      story.begin("Skipping fixup! commits", repos.uniqueId);
       story.narrate(
         "Commits prefixed with 'fixup!' are meant to be squashed later, so sp skips opening PRs for them.",
       );
@@ -129,7 +129,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync --open", () => {
   test(
     "creates PRs for non-temp commits while skipping temp commits in same stack",
     async () => {
-      story.begin("creates PRs for non-temp commits while skipping temp commits", repos.uniqueId);
+      story.begin("Mixed stack with temp commits", repos.uniqueId);
       story.narrate(
         "When a stack has both regular and temporary commits, sp creates PRs for the regular commits and skips the temporary ones.",
       );
@@ -157,7 +157,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync --open", () => {
   test(
     "creates PR for a single commit stack",
     async () => {
-      story.begin("creates PR for a single commit stack", repos.uniqueId);
+      story.begin("Single commit PR creation", repos.uniqueId);
       story.narrate("A feature branch with a single commit gets one PR created.");
 
       const repo = await repos.clone({ testName: "single-pr" });
@@ -181,7 +181,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: sync --open", () => {
   test(
     "opens PRs for commits already pushed to remote",
     async () => {
-      story.begin("opens PRs for commits already pushed to remote", repos.uniqueId);
+      story.begin("Opening PRs for existing branches", repos.uniqueId);
       story.narrate(
         "If branches were previously pushed without --open, running sync --open later will create PRs for them.",
       );
@@ -335,7 +335,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR Body Generation", () 
   test(
     "creates PR with body containing commit message",
     async () => {
-      story.begin("creates PR with body containing commit message", repos.uniqueId);
+      story.begin("PR body from commit message", repos.uniqueId);
       story.narrate("When creating a PR, sp generates a body with the commit message content.");
 
       const repo = await repos.clone({ testName: "pr-body-basic" });
@@ -372,7 +372,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR Body Generation", () 
   test(
     "creates PR with stack links for multiple commits",
     async () => {
-      story.begin("creates PR with stack links for multiple commits", repos.uniqueId);
+      story.begin("Stack links in PR body", repos.uniqueId);
       story.narrate(
         "When a stack has multiple PRs, each PR body contains links to all PRs in the stack.",
       );
@@ -410,7 +410,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR Body Generation", () 
   test(
     "group PR lists all commit subjects",
     async () => {
-      story.begin("group PR lists all commit subjects", repos.uniqueId);
+      story.begin("Group PR with commit list", repos.uniqueId);
       story.narrate(
         "When multiple commits are grouped, the PR body lists all commit subjects as bullet points. " +
           "Using --allow-untitled-pr since this group has no stored title.",
@@ -456,7 +456,7 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: PR Body Generation", () 
   test(
     "fails to create PR for group without stored title",
     async () => {
-      story.begin("fails to create PR for group without stored title", repos.uniqueId);
+      story.begin("Untitled group PR error", repos.uniqueId);
       story.narrate(
         "When a group has no stored title and --allow-untitled-pr is not set, sync fails with a helpful error.",
       );
