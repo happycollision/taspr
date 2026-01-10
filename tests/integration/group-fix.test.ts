@@ -1,9 +1,11 @@
-import { test, expect, describe, afterAll } from "bun:test";
+import { expect, describe } from "bun:test";
 import { $ } from "bun";
 import { repoManager } from "../helpers/local-repo.ts";
 import { scenarios } from "../../src/scenario/definitions.ts";
-import { createStory } from "../helpers/story.ts";
+import { createStoryTest } from "../helpers/story-test.ts";
 import { runSpry } from "./helpers.ts";
+
+const { test, afterAll } = createStoryTest("group-fix.test.ts");
 
 /**
  * Run sp group --fix command.
@@ -22,14 +24,10 @@ async function getCommitTrailers(cwd: string, count: number): Promise<string> {
 
 describe("sp group --fix", () => {
   const repos = repoManager();
-  const story = createStory("group-fix.test.ts");
 
-  afterAll(async () => {
-    await story.flush();
-  });
+  afterAll();
 
-  test("reports valid stack when no issues found", async () => {
-    story.begin("Valid stack with no issues");
+  test("Valid stack with no issues", async (story) => {
     story.narrate("When all groups in a stack are valid, sp group --fix reports no issues.");
 
     const repo = await repos.create();
@@ -37,15 +35,13 @@ describe("sp group --fix", () => {
 
     const result = await runGroupFix(repo.path);
     story.log(result);
-    story.end();
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("No invalid groups found");
     expect(result.stdout).toContain("Stack is valid");
   });
 
-  test("fixes split group by dissolving in non-TTY mode", async () => {
-    story.begin("Split group auto-dissolve (non-TTY)");
+  test("Split group auto-dissolve (non-TTY)", async (story) => {
     story.narrate(
       "A 'split group' occurs when commits with the same group ID are not contiguous. " +
         "In non-TTY mode, --fix automatically dissolves the group by removing trailers.",
@@ -61,7 +57,6 @@ describe("sp group --fix", () => {
     // In non-TTY mode, --fix falls back to dissolve behavior
     const result = await runGroupFix(repo.path);
     story.log(result);
-    story.end();
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("Split group");
@@ -73,8 +68,7 @@ describe("sp group --fix", () => {
     expect(afterTrailers).toContain("Spry-Commit-Id"); // Should preserve commit IDs
   });
 
-  test("handles empty stack gracefully", async () => {
-    story.begin("Empty stack handling");
+  test("Empty stack handling", async (story) => {
     story.narrate("Running group --fix on a branch with no commits above main exits cleanly.");
 
     const repo = await repos.create();
@@ -82,14 +76,12 @@ describe("sp group --fix", () => {
 
     const result = await runGroupFix(repo.path);
     story.log(result);
-    story.end();
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("No commits in stack");
   });
 
-  test("handles stack without any group trailers", async () => {
-    story.begin("Stack without groups");
+  test("Stack without groups", async (story) => {
     story.narrate("A stack with Spry-Commit-Id trailers but no groups is valid.");
 
     const repo = await repos.create();
@@ -97,14 +89,12 @@ describe("sp group --fix", () => {
 
     const result = await runGroupFix(repo.path);
     story.log(result);
-    story.end();
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("No invalid groups found");
   });
 
-  test("--fix=dissolve removes split group trailers", async () => {
-    story.begin("Explicit dissolve with --fix=dissolve");
+  test("Explicit dissolve with --fix=dissolve", async (story) => {
     story.narrate(
       "Using --fix=dissolve explicitly dissolves a split group by removing its trailers.",
     );
@@ -114,7 +104,6 @@ describe("sp group --fix", () => {
 
     const result = await runGroupFix(repo.path, "dissolve");
     story.log(result);
-    story.end();
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("Split group");
