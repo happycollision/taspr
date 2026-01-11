@@ -4,6 +4,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Source docker/.env if it exists (for GH_TOKEN)
+if [ -f "$PROJECT_DIR/docker/.env" ]; then
+    set -a
+    source "$PROJECT_DIR/docker/.env"
+    set +a
+fi
+
 usage() {
     echo "Usage: $0 <command> [options]"
     echo ""
@@ -11,23 +18,22 @@ usage() {
     echo ""
     echo "Commands:"
     echo "  shell [2.40|2.38]    Start interactive shell (default: 2.40)"
-    echo "  test [2.40|2.38]     Run tests and exit (default: 2.40)"
+    echo "  test [2.40|2.38]     Run all unit tests (default: 2.40)"
     echo "  test-all             Run both test suites (2.40 full, 2.38 version only)"
+    echo "  test-local           Run integration tests (local only, no GitHub)"
+    echo "  test-github          Run integration tests with GitHub API"
+    echo "  test-ci              Run integration tests with GitHub API + CI"
+    echo "  test-unsupported     Run version tests with git 2.38 (unsupported)"
     echo ""
     echo "Examples:"
     echo "  $0 shell             # Dev shell with git 2.40"
     echo "  $0 shell 2.38        # Dev shell with git 2.38"
-    echo "  $0 test              # Run all tests with git 2.40"
-    echo "  $0 test 2.38         # Run version tests with git 2.38"
+    echo "  $0 test              # Run all unit tests with git 2.40"
+    echo "  $0 test-local        # Run local integration tests"
+    echo "  $0 test-github       # Run GitHub integration tests"
+    echo "  $0 test-ci           # Run full integration tests (GitHub + CI)"
+    echo "  $0 test-unsupported  # Run version tests with git 2.38"
     echo "  $0 test-all          # Run both CI test suites"
-}
-
-get_version() {
-    case "${1:-2.40}" in
-        2.40) echo "2.40.0" ;;
-        2.38) echo "2.38.5" ;;
-        *) echo "Unknown version: $1" >&2; exit 1 ;;
-    esac
 }
 
 get_service() {
@@ -44,6 +50,13 @@ shell_cmd() {
     docker compose run --rm "$service"
 }
 
+run_docker_test() {
+    local service="$1"
+    local test_cmd="$2"
+    cd "$PROJECT_DIR/docker"
+    docker compose run --rm "$service" bash -c "git --version && bun install --frozen-lockfile && $test_cmd"
+}
+
 test_cmd() {
     local version="${1:-2.40}"
     local service=$(get_service "$version")
@@ -54,8 +67,23 @@ test_cmd() {
         test_cmd="bun test tests/git-version.test.ts"
     fi
 
-    cd "$PROJECT_DIR/docker"
-    docker compose run --rm "$service" bash -c "git --version && bun install --frozen-lockfile && $test_cmd"
+    run_docker_test "$service" "$test_cmd"
+}
+
+test_local_cmd() {
+    run_docker_test "dev" "bun test tests/integration/"
+}
+
+test_github_cmd() {
+    run_docker_test "dev" "GITHUB_INTEGRATION_TESTS=1 bun test tests/integration/"
+}
+
+test_ci_cmd() {
+    run_docker_test "dev" "GITHUB_INTEGRATION_TESTS=1 GITHUB_CI_TESTS=1 bun test tests/integration/"
+}
+
+test_unsupported_cmd() {
+    run_docker_test "dev-old-git" "bun test tests/git-version.test.ts"
 }
 
 test_all_cmd() {
@@ -68,7 +96,7 @@ test_all_cmd() {
     echo "=========================================="
     echo "Running version tests with git 2.38.5"
     echo "=========================================="
-    test_cmd 2.38
+    test_unsupported_cmd
 
     echo ""
     echo "=========================================="
@@ -82,6 +110,18 @@ case "${1:-help}" in
         ;;
     test)
         test_cmd "$2"
+        ;;
+    test-local)
+        test_local_cmd
+        ;;
+    test-github)
+        test_github_cmd
+        ;;
+    test-ci)
+        test_ci_cmd
+        ;;
+    test-unsupported)
+        test_unsupported_cmd
         ;;
     test-all)
         test_all_cmd

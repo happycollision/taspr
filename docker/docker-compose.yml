@@ -12,6 +12,8 @@ services:
     working_dir: /workspace
     stdin_open: true
     tty: true
+    environment:
+      - GH_TOKEN=${GH_TOKEN:-}
     command: bash
 
   # Development with old git (2.38) for testing error handling
@@ -27,6 +29,8 @@ services:
     working_dir: /workspace
     stdin_open: true
     tty: true
+    environment:
+      - GH_TOKEN=${GH_TOKEN:-}
     command: bash
 
 volumes:

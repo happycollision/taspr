@@ -450,24 +450,29 @@ A Docker environment is provided for testing against the minimum supported Git v
 - Investigating discrepancies between local and CI environments
 - Testing Git version error handling
 
+**Setup (for tests requiring GitHub):**
+
 ```bash
-# Start a dev shell with git 2.40 (minimum supported)
-bun run docker:shell
-
-# Start a dev shell with git 2.38 (to test unsupported version handling)
-bun run docker:shell:2.38
-
-# Run all tests with git 2.40
-bun run test:docker:2.40
-
-# Run version tests with git 2.38
-bun run test:docker:2.38
-
-# Run both test suites (like CI)
-bun run test:docker
+cp docker/.env.example docker/.env
+# Edit docker/.env and add your GH_TOKEN
 ```
 
-The container automatically installs dependencies and builds `sp` on first run.
+**Commands:**
+
+```bash
+# Dev shells
+bun run docker:shell           # Shell with git 2.40
+bun run docker:shell:2.38      # Shell with git 2.38
+
+# Run tests in Docker
+bun run test:local:docker      # Integration tests (local only)
+bun run test:github:docker     # Integration tests + GitHub API
+bun run test:ci:docker         # Integration tests + GitHub API + CI
+bun run test:unsupported:docker # Version tests with git 2.38
+bun run test:docker            # All tests (unit + unsupported version check)
+```
+
+The container automatically installs dependencies on first run.
 
 ### Scenario Runner
 
