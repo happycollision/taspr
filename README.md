@@ -71,7 +71,7 @@ export PATH="$PATH:$(pwd)/dist"
 
 - [Bun](https://bun.sh) runtime
 - [GitHub CLI](https://cli.github.com/) (`gh`) - authenticated via `gh auth login`
-- Git 2.0+
+- Git 2.40+
 
 ## Quick Start
 

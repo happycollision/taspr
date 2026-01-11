@@ -5,6 +5,7 @@ import { syncCommand } from "./commands/sync.ts";
 import { landCommand } from "./commands/land.ts";
 import { cleanCommand } from "./commands/clean.ts";
 import { groupCommand, dissolveCommand } from "./commands/group.ts";
+import { checkGitVersion } from "../git/plumbing.ts";
 import packageJson from "../../package.json";
 
 const program = new Command();
@@ -12,7 +13,18 @@ const program = new Command();
 program
   .name("sp")
   .description("Spry: Stacked PRs and more. Develop with alacrity.")
-  .version(packageJson.version);
+  .version(packageJson.version)
+  .hook("preAction", async () => {
+    const result = await checkGitVersion();
+    if (!result.ok) {
+      console.error(
+        `Error: Git ${result.version} is not supported.\n\n` +
+          `Spry requires Git ${result.minRequired} or later.\n` +
+          `Please upgrade your Git installation.`,
+      );
+      process.exit(1);
+    }
+  });
 
 program
   .command("view")
