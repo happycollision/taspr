@@ -186,8 +186,19 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
       // Continue to delete safe branches normally
     }
 
-    if (safeBranches.length === 0 && (!includeUnsafe || unsafeBranches.length === 0)) {
+    // Only show "no orphaned branches" when there are truly none
+    // If there are unsafe branches, we should hint about them
+    if (safeBranches.length === 0 && unsafeBranches.length === 0) {
       console.log("✓ No orphaned branches found");
+      return;
+    }
+
+    // No safe branches but there are unsafe branches - hint about --unsafe
+    if (safeBranches.length === 0 && !includeUnsafe && unsafeBranches.length > 0) {
+      console.log("✓ No merged branches found");
+      console.log(
+        `\n💡 Found ${unsafeBranches.length} branch(es) matched by commit-id only. Use --unsafe to include them.`,
+      );
       return;
     }
 

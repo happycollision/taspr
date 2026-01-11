@@ -27,12 +27,20 @@ const repos = repoManager();
 
 describe("git/plumbing", () => {
   describe("checkGitVersion", () => {
-    test("returns ok:true for current git version", async () => {
+    test("requires Git 2.40+ for merge-tree --merge-base support", async () => {
       const result = await checkGitVersion();
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.version).toMatch(/^\d+\.\d+\.\d+/);
+
+      if (!result.ok) {
+        throw new Error(
+          `Git version check failed!\n\n` +
+            `Current: ${result.version}\n` +
+            `Required: ${result.minRequired}+\n\n` +
+            `Git 2.40 introduced 'git merge-tree --merge-base' which is required for sp group --fix=merge.`,
+        );
       }
+
+      expect(result.ok).toBe(true);
+      expect(result.version).toMatch(/^\d+\.\d+\.\d+/);
     });
   });
 

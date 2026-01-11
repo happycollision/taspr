@@ -16,14 +16,15 @@ import { asserted } from "../utils/assert.ts";
  * - Single reset at end only when tree actually changes
  *
  * Requirements:
- * - Git 2.38+ for `git merge-tree --write-tree`
+ * - Git 2.40+ for `git merge-tree --write-tree --merge-base`
  */
 
 /**
  * Minimum Git version required for plumbing operations.
  * Git 2.38 introduced `git merge-tree --write-tree`.
+ * Git 2.40 introduced `git merge-tree --merge-base`.
  */
-export const MIN_GIT_VERSION = "2.38.0";
+export const MIN_GIT_VERSION = "2.40.0";
 
 export interface GitVersionResult {
   ok: true;
@@ -38,7 +39,7 @@ export interface GitVersionError {
 
 /**
  * Check if Git version supports plumbing operations.
- * Requires Git 2.38+ for `git merge-tree --write-tree`.
+ * Requires Git 2.40+ for `git merge-tree --write-tree --merge-base`.
  */
 export async function checkGitVersion(
   options: GitOptions = {},
@@ -57,8 +58,8 @@ export async function checkGitVersion(
   const minor = parseInt(asserted(match[2]), 10);
   const version = `${major}.${minor}.${asserted(match[3])}`;
 
-  // Check version >= 2.38
-  if (major < 2 || (major === 2 && minor < 38)) {
+  // Check version >= 2.40
+  if (major < 2 || (major === 2 && minor < 40)) {
     return { ok: false, version, minRequired: MIN_GIT_VERSION };
   }
 
@@ -246,7 +247,7 @@ export interface MergeTreeConflict {
  * Perform a three-way merge using git merge-tree --write-tree.
  *
  * This computes the merge result without touching the working directory.
- * Requires Git 2.38+.
+ * Requires Git 2.40+.
  *
  * @param base - The merge base (common ancestor)
  * @param ours - "Our" side of the merge (typically the branch being merged into)

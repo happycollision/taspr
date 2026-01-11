@@ -153,8 +153,9 @@ describe.skipIf(SKIP_GITHUB_TESTS)("GitHub Integration: clean command", () => {
       const syncResult = await runSync(repo.path, { open: true });
       expect(syncResult.exitCode).toBe(0);
 
-      // Find the PRs (both will have the uniqueId in the title)
-      const prs = await repo.findPRs(repo.uniqueId);
+      // Find the PRs (both will have the uniqueId in the title) and sort by PR number
+      // Lower PR numbers = bottom of stack (created first)
+      const prs = (await repo.findPRs(repo.uniqueId)).sort((a, b) => a.number - b.number);
       expect(prs.length).toBe(2);
       const firstPr = prs[0];
       const secondPr = prs[1];
