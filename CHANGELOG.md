@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.2] - 2026-01-12
+
 ### Added
 
 - GitHub API retry logic with exponential backoff and jitter
