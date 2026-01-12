@@ -5,6 +5,8 @@ import {
   getStackCommits,
   getMergeBase,
   getCurrentBranch,
+  isDetachedHead,
+  assertNotDetachedHead,
   hasUncommittedChanges,
 } from "./commands.ts";
 import { join } from "node:path";
@@ -27,6 +29,75 @@ describe("git/commands", () => {
 
       const branch = await getCurrentBranch({ cwd: repo.path });
       expect(branch).toBe("main");
+    });
+
+    test("returns 'HEAD' in detached HEAD state", async () => {
+      const repo = await repos.create();
+
+      // Create a commit and then checkout the commit hash (detached HEAD)
+      await repo.branch("feature");
+      await repo.commit();
+      const headSha = (await $`git -C ${repo.path} rev-parse HEAD`.text()).trim();
+      await $`git -C ${repo.path} checkout ${headSha}`.quiet();
+
+      const branch = await getCurrentBranch({ cwd: repo.path });
+      expect(branch).toBe("HEAD");
+    });
+  });
+
+  describe("isDetachedHead", () => {
+    test("returns false when on a branch", async () => {
+      const repo = await repos.create();
+
+      const detached = await isDetachedHead({ cwd: repo.path });
+      expect(detached).toBe(false);
+    });
+
+    test("returns true in detached HEAD state", async () => {
+      const repo = await repos.create();
+
+      // Checkout a specific commit (detached HEAD)
+      const headSha = (await $`git -C ${repo.path} rev-parse HEAD`.text()).trim();
+      await $`git -C ${repo.path} checkout ${headSha}`.quiet();
+
+      const detached = await isDetachedHead({ cwd: repo.path });
+      expect(detached).toBe(true);
+    });
+  });
+
+  describe("assertNotDetachedHead", () => {
+    test("does not throw when on a branch", async () => {
+      const repo = await repos.create();
+
+      await expect(assertNotDetachedHead({ cwd: repo.path })).resolves.toBeUndefined();
+    });
+
+    test("throws with helpful message in detached HEAD state", async () => {
+      const repo = await repos.create();
+
+      // Checkout a specific commit (detached HEAD)
+      const headSha = (await $`git -C ${repo.path} rev-parse HEAD`.text()).trim();
+      await $`git -C ${repo.path} checkout ${headSha}`.quiet();
+
+      await expect(assertNotDetachedHead({ cwd: repo.path })).rejects.toThrow(
+        /Cannot perform this operation in detached HEAD state/,
+      );
+    });
+
+    test("error message includes remediation steps", async () => {
+      const repo = await repos.create();
+
+      const headSha = (await $`git -C ${repo.path} rev-parse HEAD`.text()).trim();
+      await $`git -C ${repo.path} checkout ${headSha}`.quiet();
+
+      try {
+        await assertNotDetachedHead({ cwd: repo.path });
+        expect.unreachable("should have thrown");
+      } catch (e) {
+        const error = e as Error;
+        expect(error.message).toContain("git checkout <branch-name>");
+        expect(error.message).toContain("git checkout -b <new-branch-name>");
+      }
     });
   });
 

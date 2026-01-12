@@ -1,5 +1,10 @@
 import type { GitOptions } from "./commands.ts";
-import { getMergeBase, getStackCommitsWithTrailers, getCurrentBranch } from "./commands.ts";
+import {
+  getMergeBase,
+  getStackCommitsWithTrailers,
+  getCurrentBranch,
+  assertNotDetachedHead,
+} from "./commands.ts";
 import { generateCommitId } from "../core/id.ts";
 import { asserted } from "../utils/assert.ts";
 import {
@@ -76,6 +81,9 @@ export async function applyGroupSpec(
   spec: GroupSpec,
   options: GitOptions = {},
 ): Promise<ReorderResult> {
+  // Ensure we're on a branch (not detached HEAD)
+  await assertNotDetachedHead(options);
+
   // Get current commits
   const commits = await getStackCommitsWithTrailers(options);
   if (commits.length === 0) {
@@ -373,6 +381,10 @@ export async function dissolveGroup(
   options: DissolveOptions = {},
 ): Promise<ReorderResult> {
   const { assignGroupIdToCommit, ...gitOptions } = options;
+
+  // Ensure we're on a branch (not detached HEAD)
+  await assertNotDetachedHead(gitOptions);
+
   const commits = await getStackCommitsWithTrailers(gitOptions);
 
   // Find commits belonging to this group
@@ -454,6 +466,9 @@ export async function addGroupTrailers(
   groupTitle: string,
   options: GitOptions = {},
 ): Promise<ReorderResult> {
+  // Ensure we're on a branch (not detached HEAD)
+  await assertNotDetachedHead(options);
+
   const commits = await getStackCommitsWithTrailers(options);
 
   const targetCommit = commits.find((c) => c.hash === commitHash || c.hash.startsWith(commitHash));
@@ -494,6 +509,9 @@ export async function removeGroupTrailers(
   groupId: string,
   options: GitOptions = {},
 ): Promise<ReorderResult> {
+  // Ensure we're on a branch (not detached HEAD)
+  await assertNotDetachedHead(options);
+
   const commits = await getStackCommitsWithTrailers(options);
 
   const targetCommit = commits.find((c) => c.hash === commitHash || c.hash.startsWith(commitHash));
@@ -603,6 +621,9 @@ export async function mergeSplitGroup(
  * Also clears all group titles from ref storage.
  */
 export async function removeAllGroupTrailers(options: GitOptions = {}): Promise<ReorderResult> {
+  // Ensure we're on a branch (not detached HEAD)
+  await assertNotDetachedHead(options);
+
   const commits = await getStackCommitsWithTrailers(options);
 
   if (commits.length === 0) {

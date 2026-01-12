@@ -1,7 +1,12 @@
 import { $ } from "bun";
 import { join } from "node:path";
 import type { GitOptions } from "./commands.ts";
-import { getStackCommits, getStackCommitsWithTrailers, getCurrentBranch } from "./commands.ts";
+import {
+  getStackCommits,
+  getStackCommitsWithTrailers,
+  getCurrentBranch,
+  assertNotDetachedHead,
+} from "./commands.ts";
 import { getDefaultBranchRef } from "./config.ts";
 import { generateCommitId } from "../core/id.ts";
 import { addTrailers } from "./trailers.ts";
@@ -28,6 +33,9 @@ export interface InjectIdsResult {
  * @returns Information about the operation
  */
 export async function injectMissingIds(options: GitOptions = {}): Promise<InjectIdsResult> {
+  // Ensure we're on a branch (not detached HEAD)
+  await assertNotDetachedHead(options);
+
   // Get commits with trailers parsed
   const commits = await getStackCommitsWithTrailers(options);
 
@@ -101,6 +109,9 @@ export interface RebaseResult {
  * @returns Result indicating success or conflict details
  */
 export async function rebaseOntoMain(options: GitOptions = {}): Promise<RebaseResult> {
+  // Ensure we're on a branch (not detached HEAD)
+  await assertNotDetachedHead(options);
+
   const { cwd } = options;
   const defaultBranchRef = await getDefaultBranchRef();
 

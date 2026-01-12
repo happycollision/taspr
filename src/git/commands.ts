@@ -88,6 +88,7 @@ export async function hasUncommittedChanges(options: GitOptions = {}): Promise<b
 
 /**
  * Get the current branch name.
+ * Returns "HEAD" if in detached HEAD state.
  */
 export async function getCurrentBranch(options: GitOptions = {}): Promise<string> {
   const { cwd } = options;
@@ -95,6 +96,28 @@ export async function getCurrentBranch(options: GitOptions = {}): Promise<string
     ? await $`git -C ${cwd} rev-parse --abbrev-ref HEAD`.text()
     : await $`git rev-parse --abbrev-ref HEAD`.text();
   return result.trim();
+}
+
+/**
+ * Check if the repository is in detached HEAD state.
+ */
+export async function isDetachedHead(options: GitOptions = {}): Promise<boolean> {
+  const branch = await getCurrentBranch(options);
+  return branch === "HEAD";
+}
+
+/**
+ * Assert that we are not in detached HEAD state.
+ * Throws a helpful error if we are.
+ */
+export async function assertNotDetachedHead(options: GitOptions = {}): Promise<void> {
+  if (await isDetachedHead(options)) {
+    throw new Error(
+      "Cannot perform this operation in detached HEAD state.\n" +
+        "Please checkout a branch first: git checkout <branch-name>\n" +
+        "Or create a new branch: git checkout -b <new-branch-name>",
+    );
+  }
 }
 
 /**
