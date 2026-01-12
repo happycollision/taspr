@@ -69,7 +69,7 @@ describe("git/commands", () => {
     test("does not throw when on a branch", async () => {
       const repo = await repos.create();
 
-      await expect(assertNotDetachedHead({ cwd: repo.path })).resolves.toBeUndefined();
+      expect(assertNotDetachedHead({ cwd: repo.path })).resolves.toBeUndefined();
     });
 
     test("throws with helpful message in detached HEAD state", async () => {
@@ -79,7 +79,7 @@ describe("git/commands", () => {
       const headSha = (await $`git -C ${repo.path} rev-parse HEAD`.text()).trim();
       await $`git -C ${repo.path} checkout ${headSha}`.quiet();
 
-      await expect(assertNotDetachedHead({ cwd: repo.path })).rejects.toThrow(
+      expect(assertNotDetachedHead({ cwd: repo.path })).rejects.toThrow(
         /Cannot perform this operation in detached HEAD state/,
       );
     });

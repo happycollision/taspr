@@ -14,10 +14,11 @@
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import type { CommandResult } from "../integration/helpers.ts";
 
 /** ANSI escape code pattern for stripping colors */
+// eslint-disable-next-line no-control-regex
 const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
 
 /** Story entry types */

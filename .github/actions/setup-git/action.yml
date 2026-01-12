@@ -1,13 +1,13 @@
-name: 'Setup Git'
-description: 'Install a specific version of Git from source'
+name: "Setup Git"
+description: "Install a specific version of Git from source"
 
 inputs:
   version:
-    description: 'Git version to install (e.g., 2.40.0)'
+    description: "Git version to install (e.g., 2.40.0)"
     required: true
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Install build dependencies
       shell: bash

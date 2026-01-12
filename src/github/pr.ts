@@ -127,7 +127,17 @@ export async function findPRByBranch(
   await ensureGhInstalled();
 
   // Use --limit to handle branches with multiple PRs (gh defaults to 30)
-  const args = ["gh", "pr", "list", "--head", branchName, "--json", "number,url,state,title", "--limit", "100"];
+  const args = [
+    "gh",
+    "pr",
+    "list",
+    "--head",
+    branchName,
+    "--json",
+    "number,url,state,title",
+    "--limit",
+    "100",
+  ];
   if (options?.includeAll) {
     args.push("--state", "all");
   }
@@ -182,7 +192,15 @@ export async function findPRsByBranches(
 
   // Fetch all PRs in a single call (no --head filter)
   // Use --limit to handle repos with many PRs (gh defaults to 30)
-  const args = ["gh", "pr", "list", "--json", "number,url,state,title,body,headRefName", "--limit", "500"];
+  const args = [
+    "gh",
+    "pr",
+    "list",
+    "--json",
+    "number,url,state,title,body,headRefName",
+    "--limit",
+    "500",
+  ];
   if (options?.includeAll) {
     args.push("--state", "all");
   }

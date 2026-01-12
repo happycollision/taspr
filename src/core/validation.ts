@@ -8,9 +8,7 @@
 /**
  * Validation result type.
  */
-export type ValidationResult =
-  | { ok: true }
-  | { ok: false; error: string };
+export type ValidationResult = { ok: true } | { ok: false; error: string };
 
 /**
  * Validate a git branch name against git's branch naming rules.
@@ -120,7 +118,8 @@ export function validatePRTitle(title: string): ValidationResult {
   if (!title || title.trim().length === 0) {
     return {
       ok: false,
-      error: "PR title cannot be empty. Use 'sp group' to set a title, or pass --allow-untitled-pr to use the first commit subject.",
+      error:
+        "PR title cannot be empty. Use 'sp group' to set a title, or pass --allow-untitled-pr to use the first commit subject.",
     };
   }
 

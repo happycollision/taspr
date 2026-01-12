@@ -135,13 +135,9 @@ function sleep(ms: number): Promise<void> {
  * @throws RateLimitError if rate limited and all retries exhausted
  * @throws Error if command fails with non-retryable error
  */
-export async function ghExec(
-  args: string[],
-  options: RetryOptions = {},
-): Promise<ShellOutput> {
+export async function ghExec(args: string[], options: RetryOptions = {}): Promise<ShellOutput> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const exec = opts.executor;
-  let lastError: string = "";
 
   for (let attempt = 0; attempt < opts.maxAttempts; attempt++) {
     const result = await exec(args);
@@ -151,7 +147,6 @@ export async function ghExec(
     }
 
     const stderr = result.stderr.toString();
-    lastError = stderr;
 
     // Check for rate limiting
     const rateLimitSeconds = parseRateLimitError(stderr);

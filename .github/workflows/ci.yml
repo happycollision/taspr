@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       github_integration:
-        description: 'Run GitHub integration tests'
+        description: "Run GitHub integration tests"
         required: false
         default: false
         type: boolean
@@ -23,7 +23,7 @@ jobs:
       - name: Setup git 2.40.0
         uses: ./.github/actions/setup-git
         with:
-          version: '2.40.0'
+          version: "2.40.0"
 
       - name: Setup mise
         uses: jdx/mise-action@v2
@@ -67,7 +67,7 @@ jobs:
       - name: Setup git 2.38.5
         uses: ./.github/actions/setup-git
         with:
-          version: '2.38.5'
+          version: "2.38.5"
 
       - name: Setup mise
         uses: jdx/mise-action@v2
@@ -100,7 +100,7 @@ jobs:
       - name: Setup git 2.40.0
         uses: ./.github/actions/setup-git
         with:
-          version: '2.40.0'
+          version: "2.40.0"
 
       - name: Setup mise
         uses: jdx/mise-action@v2

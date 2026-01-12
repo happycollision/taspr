@@ -1,9 +1,9 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { $ } from "bun";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { getBranchName, getBranchNameConfig } from "../github/branches.ts";
+import { getBranchName } from "../github/branches.ts";
 import { createPR } from "../github/pr.ts";
 
 describe("validation integration", () => {
@@ -48,9 +48,9 @@ describe("validation integration", () => {
     }).toThrow("Invalid branch name");
   });
 
-  test("createPR validates empty title", async () => {
+  test("createPR validates empty title", () => {
     // This test will fail at validation before even attempting to call gh
-    await expect(
+    expect(
       createPR({
         title: "",
         head: "test-branch",
@@ -59,8 +59,8 @@ describe("validation integration", () => {
     ).rejects.toThrow("cannot be empty");
   });
 
-  test("createPR validates title with control characters", async () => {
-    await expect(
+  test("createPR validates title with control characters", () => {
+    expect(
       createPR({
         title: "Bad title\x00with null",
         head: "test-branch",
@@ -69,10 +69,10 @@ describe("validation integration", () => {
     ).rejects.toThrow("control characters");
   });
 
-  test("createPR validates title that is too long", async () => {
+  test("createPR validates title that is too long", () => {
     const longTitle = "a".repeat(501);
 
-    await expect(
+    expect(
       createPR({
         title: longTitle,
         head: "test-branch",

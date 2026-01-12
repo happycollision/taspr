@@ -1,4 +1,4 @@
-import { test, expect, describe, beforeEach, afterEach, mock } from "bun:test";
+import { test, expect, describe, mock } from "bun:test";
 import { repoManager } from "../../tests/helpers/local-repo.ts";
 import {
   readStackSettings,
@@ -18,7 +18,7 @@ import {
 const repos = repoManager();
 
 // Mock getGitHubUsername to avoid gh CLI dependency
-mock.module("./group-titles.ts", () => ({
+void mock.module("./group-titles.ts", () => ({
   getGitHubUsername: async () => "testuser",
 }));
 

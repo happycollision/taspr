@@ -55,50 +55,41 @@ describe("git version detection", () => {
 describe("git 2.40+ (supported version)", async () => {
   const info = await versionInfoPromise;
 
-  test.skipIf(!info.meetsMinimum)(
-    `checkGitVersion passes with git ${info.full}`,
-    async () => {
-      const result = await checkGitVersion();
+  test.skipIf(!info.meetsMinimum)(`checkGitVersion passes with git ${info.full}`, async () => {
+    const result = await checkGitVersion();
 
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.version).toMatch(/^\d+\.\d+\.\d+/);
-      }
-    },
-  );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.version).toMatch(/^\d+\.\d+\.\d+/);
+    }
+  });
 });
 
 describe("git < 2.40 (unsupported version)", async () => {
   const info = await versionInfoPromise;
 
-  test.skipIf(info.meetsMinimum)(
-    `checkGitVersion returns error for git ${info.full}`,
-    async () => {
-      const result = await checkGitVersion();
+  test.skipIf(info.meetsMinimum)(`checkGitVersion returns error for git ${info.full}`, async () => {
+    const result = await checkGitVersion();
 
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.version).toBe(info.full);
-        expect(result.minRequired).toBe(MIN_GIT_VERSION);
-      }
-    },
-  );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.version).toBe(info.full);
+      expect(result.minRequired).toBe(MIN_GIT_VERSION);
+    }
+  });
 
-  test.skipIf(info.meetsMinimum)(
-    "sp view shows helpful error message",
-    async () => {
-      // Run sp view and capture the error output
-      const result = await $`bun run src/cli/index.ts view`.nothrow().quiet();
+  test.skipIf(info.meetsMinimum)("sp view shows helpful error message", async () => {
+    // Run sp view and capture the error output
+    const result = await $`bun run src/cli/index.ts view`.nothrow().quiet();
 
-      // Should fail
-      expect(result.exitCode).not.toBe(0);
+    // Should fail
+    expect(result.exitCode).not.toBe(0);
 
-      // Error message should be helpful
-      const output = result.stderr.toString() + result.stdout.toString();
-      expect(output).toContain("2.40");
-      expect(output).toContain(info.full);
-    },
-  );
+    // Error message should be helpful
+    const output = result.stderr.toString() + result.stdout.toString();
+    expect(output).toContain("2.40");
+    expect(output).toContain(info.full);
+  });
 });
 
 // Print version info for CI logs

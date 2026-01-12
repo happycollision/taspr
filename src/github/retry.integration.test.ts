@@ -5,9 +5,10 @@ import { ghExec, RateLimitError, type CommandExecutor } from "./retry.ts";
  * Create a mock executor that returns predefined results in sequence.
  * Useful for testing retry behavior.
  */
-function createMockExecutor(
-  results: Array<{ exitCode: number; stdout: string; stderr: string }>,
-): { executor: CommandExecutor; calls: string[][] } {
+function createMockExecutor(results: Array<{ exitCode: number; stdout: string; stderr: string }>): {
+  executor: CommandExecutor;
+  calls: string[][];
+} {
   const calls: string[][] = [];
   let index = 0;
 
@@ -20,11 +21,11 @@ function createMockExecutor(
       exitCode: result.exitCode,
       stdout: Buffer.from(result.stdout),
       stderr: Buffer.from(result.stderr),
-      text: () => Promise.resolve(result.stdout),
-      json: () => Promise.resolve(JSON.parse(result.stdout || "{}")),
-      blob: () => Promise.resolve(new Blob([result.stdout])),
-      arrayBuffer: () => Promise.resolve(new TextEncoder().encode(result.stdout).buffer),
-      bytes: () => Promise.resolve(new Uint8Array(new TextEncoder().encode(result.stdout))),
+      text: () => result.stdout,
+      json: () => JSON.parse(result.stdout || "{}"),
+      blob: () => new Blob([result.stdout]),
+      arrayBuffer: () => new TextEncoder().encode(result.stdout).buffer,
+      bytes: () => new Uint8Array(new TextEncoder().encode(result.stdout)),
     } as Awaited<ReturnType<CommandExecutor>>;
   };
 
@@ -184,7 +185,7 @@ describe("retry integration", () => {
         { exitCode: 1, stdout: "", stderr: "API rate limit exceeded" },
       ]);
 
-      await expect(
+      expect(
         ghExec(["gh", "api", "test"], {
           executor,
           maxAttempts: 3,

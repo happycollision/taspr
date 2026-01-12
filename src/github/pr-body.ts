@@ -1,4 +1,3 @@
-import { $ } from "bun";
 import type { PRUnit, CommitInfo } from "../types.ts";
 import type { TemplateLocation } from "../git/config.ts";
 import { createHash } from "crypto";
@@ -113,6 +112,7 @@ export function stripTrailersFromBody(body: string): string {
 
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
+    if (!line) continue; // Skip if undefined (shouldn't happen but satisfies TS)
 
     if (line.trim() === "") {
       if (foundBlankLine) {

@@ -175,7 +175,7 @@ describe("github/retry", () => {
       const sem = new Semaphore(1);
 
       // First call throws
-      await expect(
+      expect(
         sem.run(async () => {
           throw new Error("test error");
         }),
@@ -277,16 +277,13 @@ describe("github/retry", () => {
 
       // This command fails with a retryable-looking error
       // We'll use a script that outputs a retryable error message
-      const result = await ghExec(
-        ["sh", "-c", "echo 'connection timeout' >&2; exit 1"],
-        {
-          maxAttempts: 2,
-          baseWaitMs: 10, // short for testing
-          onRetry: (attempt, waitMs) => {
-            retryCalls.push({ attempt, waitMs });
-          },
+      const result = await ghExec(["sh", "-c", "echo 'connection timeout' >&2; exit 1"], {
+        maxAttempts: 2,
+        baseWaitMs: 10, // short for testing
+        onRetry: (attempt, waitMs) => {
+          retryCalls.push({ attempt, waitMs });
         },
-      );
+      });
 
       expect(result.exitCode).toBe(1);
       expect(retryCalls.length).toBe(1);
@@ -294,8 +291,6 @@ describe("github/retry", () => {
     });
 
     test("respects maxAttempts", async () => {
-      let attempts = 0;
-
       // Use a wrapper to count actual executions
       const originalArgs = ["sh", "-c", "echo 'ETIMEDOUT' >&2; exit 1"];
 

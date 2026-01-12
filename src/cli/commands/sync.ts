@@ -418,7 +418,6 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     // Second pass: Update PR bodies with stack links (if enabled and we have multiple PRs)
     const shouldUpdateBodies = spryConfig.showStackLinks && prsByUnitId.size > 1;
     const newContentHashes: Record<string, string> = {};
-    let bodiesUpdated = 0;
 
     if (shouldUpdateBodies && unitsNeedingBodyUpdate.length > 0) {
       // Build stack PR info for all PRs in the stack
@@ -460,7 +459,6 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
 
         await updatePRBody(prNumber, updatedBody);
         newContentHashes[unit.id] = contentHash;
-        bodiesUpdated++;
       }
 
       // Save content hashes for change detection
