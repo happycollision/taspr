@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rate limit detection with automatic wait-and-retry
 - Concurrency limiting (max 5 parallel GitHub API calls)
 - Input validation for branch names, PR titles, and commit identifiers with clear error messages
+- Detached HEAD state detection with helpful error messages and remediation steps
+
+### Changed
+
+- Performance improvements: reduced GitHub API calls in view and land commands through batched PR lookups
 
 ### Fixed
 
