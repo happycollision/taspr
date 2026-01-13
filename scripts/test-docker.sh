@@ -75,11 +75,15 @@ test_local_cmd() {
 }
 
 test_github_cmd() {
-    run_docker_test "dev" "GITHUB_INTEGRATION_TESTS=1 bun test tests/integration/"
+    # Use --max-concurrency=1 to prevent test files from running in parallel
+    # since they all share the same GitHub test repo (happycollision/spry-check)
+    run_docker_test "dev" "GITHUB_INTEGRATION_TESTS=1 bun test tests/integration/ --max-concurrency=1"
 }
 
 test_ci_cmd() {
-    run_docker_test "dev" "GITHUB_INTEGRATION_TESTS=1 GITHUB_CI_TESTS=1 bun test tests/integration/"
+    # Use --max-concurrency=1 to prevent test files from running in parallel
+    # since they all share the same GitHub test repo (happycollision/spry-check)
+    run_docker_test "dev" "GITHUB_INTEGRATION_TESTS=1 GITHUB_CI_TESTS=1 bun test tests/integration/ --max-concurrency=1"
 }
 
 test_unsupported_cmd() {
