@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - User-facing messages now reference `sp` instead of `spry` for command suggestions
+- `sync --open -i` now only pushes branches up to the last commit with a PR, avoiding unnecessary branch pushes for unselected commits
 
 ## [1.0.0-beta.2] - 2026-01-12
 

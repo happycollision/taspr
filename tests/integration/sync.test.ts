@@ -17,7 +17,7 @@ import { createGitHubFixture, type GitHubFixture } from "../helpers/github-fixtu
 import { createStoryTest } from "../helpers/story-test.ts";
 import { getStackCommitsWithTrailers } from "../../src/git/commands.ts";
 import { scenarios } from "../../src/scenario/definitions.ts";
-import { SKIP_GITHUB_TESTS, SKIP_CI_TESTS, runSync } from "./helpers.ts";
+import { SKIP_GITHUB_TESTS, SKIP_CI_TESTS, runSync, runSpry } from "./helpers.ts";
 
 // Create story-enabled test wrapper for documentation generation
 const { test: storyTest } = createStoryTest("sync.test.ts");
@@ -406,6 +406,63 @@ describe.skipIf(SKIP_GITHUB_TESTS)("sync --open: PR creation", () => {
       // Verify PRs were created
       const prsAfter = await repo.findPRs(repo.uniqueId);
       expect(prsAfter.length).toBe(2);
+    },
+    { timeout: 90000 },
+  );
+
+  storyTest(
+    "Only pushes branches up to the last PR (--apply filtering)",
+    async (story) => {
+      story.strip(repos.uniqueId);
+      story.narrate(
+        "When using --apply to selectively create PRs, sp only pushes branches up to the highest selected commit, not the entire stack.",
+      );
+
+      const repo = await repos.clone({ testName: "pr-boundary" });
+
+      // Use withSpryIds scenario which creates 5 commits with IDs
+      await scenarios.withSpryIds.setup(repo);
+
+      // Count commits in the stack
+      const commitCount = (
+        await $`git -C ${repo.path} rev-list --count origin/main..HEAD`.text()
+      ).trim();
+      const totalCommits = parseInt(commitCount, 10);
+
+      // Get the hash of the middle commit (3rd out of 5)
+      const middleIndex = Math.floor(totalCommits / 2) + 1; // 3 for 5 commits
+      const middleCommitHash = (
+        await $`git -C ${repo.path} rev-parse HEAD~${totalCommits - middleIndex}`.text()
+      ).trim();
+
+      story.narrate(
+        `Stack has ${totalCommits} commits. We'll use --apply to only open a PR for commit #${middleIndex} (${middleCommitHash.slice(0, 8)}).`,
+      );
+
+      // Run sync --open with --apply to only create PR for the middle commit
+      const result = await runSpry(repo.path, "sync", [
+        "--open",
+        "--apply",
+        JSON.stringify([middleCommitHash]),
+      ]);
+      story.log(result);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("Created 1 PR");
+      expect(result.stdout).toContain(`Pushed ${middleIndex} branch(es)`);
+
+      // Verify only 1 PR was created
+      const prs = await repo.findPRs(repo.uniqueId);
+      expect(prs.length).toBe(1);
+
+      // Verify only branches up to middleIndex were pushed
+      const remoteBranches = (
+        await $`git -C ${repo.path} ls-remote origin 'refs/heads/spry/*'`.text()
+      ).trim();
+      const branchCount = remoteBranches.split("\n").filter((l) => l.trim()).length;
+
+      // Should have exactly middleIndex branches (all commits up to and including the one with PR)
+      expect(branchCount).toBe(middleIndex);
     },
     { timeout: 90000 },
   );

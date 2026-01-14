@@ -333,7 +333,30 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     // Track which units need body updates in the second pass
     const unitsNeedingBodyUpdate: { unit: PRUnit; prNumber: number; isNew: boolean }[] = [];
 
-    for (const unit of activeUnits) {
+    // Find the highest unit index that will have a PR (existing or to-be-created)
+    // We only need to push branches up to this point - anything beyond is unnecessary
+    let highestPRUnitIndex = -1;
+    for (let i = 0; i < activeUnits.length; i++) {
+      const unit = asserted(activeUnits[i]);
+      const headBranch = getBranchName(unit.id, branchConfig);
+      const existingPR = openPRMap.get(headBranch) ?? null;
+      const unitTitle = resolveUnitTitle(unit);
+      const isTemp = isTempCommit(unitTitle, spryConfig.tempCommitPrefixes);
+
+      // This unit will have a PR if:
+      // 1. It already has one, OR
+      // 2. --open is set AND it's not temp AND (no applyUnitIds filter OR it's in the filter)
+      const willHavePR =
+        existingPR !== null ||
+        (options.open && !isTemp && (!applyUnitIds || applyUnitIds.has(unit.id)));
+
+      if (willHavePR) {
+        highestPRUnitIndex = i;
+      }
+    }
+
+    for (let unitIdx = 0; unitIdx < activeUnits.length; unitIdx++) {
+      const unit = asserted(activeUnits[unitIdx]);
       const headBranch = getBranchName(unit.id, branchConfig);
       const headCommit = asserted(unit.commits.at(-1));
       const status = asserted(syncStatuses.get(unit.id));
@@ -342,12 +365,13 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
       // Use cached PR data from cleanupMergedPRs batch fetch
       const existingPR = openPRMap.get(headBranch) ?? null;
 
-      // Only push if:
+      // Only push if this unit is at or below the highest unit with a PR:
       // 1. PR exists and needs update, OR
-      // 2. --open is specified (will create PR)
+      // 2. --open is specified AND unit is within the PR boundary (at or below highest PR)
+      const withinPRBoundary = unitIdx <= highestPRUnitIndex;
       const shouldPush =
         (existingPR && status.needsUpdate) ||
-        (options.open && (status.needsCreate || status.needsUpdate));
+        (options.open && withinPRBoundary && (status.needsCreate || status.needsUpdate));
 
       if (shouldPush) {
         await pushBranch(headCommit, headBranch, status.needsUpdate);

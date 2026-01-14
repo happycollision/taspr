@@ -168,6 +168,18 @@ export const scenarios = {
         message: "Second commit",
         trailers: { "Spry-Commit-Id": "def67890" },
       });
+      await repo.commit({
+        message: "Third commit",
+        trailers: { "Spry-Commit-Id": "cde11111" },
+      });
+      await repo.commit({
+        message: "Fourth commit",
+        trailers: { "Spry-Commit-Id": "fab22222" },
+      });
+      await repo.commit({
+        message: "Fifth commit",
+        trailers: { "Spry-Commit-Id": "edc33333" },
+      });
     },
   },
 
