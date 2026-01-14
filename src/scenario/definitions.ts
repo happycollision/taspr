@@ -47,10 +47,38 @@ import { $ } from "bun";
 import { join } from "node:path";
 import type { LocalRepo } from "./core.ts";
 
+/**
+ * Base repo interface that both LocalRepo and GitHubRepo satisfy.
+ * Contains the common operations needed by scenarios.
+ */
+export interface ScenarioRepo {
+  path: string;
+  uniqueId: string;
+  commit(options?: { message?: string; trailers?: Record<string, string> }): Promise<string>;
+  commitFiles(
+    files: Record<string, string>,
+    options?: { message?: string; trailers?: Record<string, string> },
+  ): Promise<string>;
+  branch(name: string): Promise<string>;
+  checkout(name: string): Promise<void>;
+  fetch(): Promise<void>;
+}
+
+/**
+ * Type guard to check if repo has updateOriginMain (LocalRepo specific)
+ */
+function hasUpdateOriginMain(repo: ScenarioRepo): repo is LocalRepo {
+  return "originPath" in repo && "updateOriginMain" in repo;
+}
+
+export type RepoType = "local" | "github" | "both";
+
 export interface ScenarioDefinition {
   name: string;
   description: string;
-  setup: (repo: LocalRepo) => Promise<void>;
+  /** Which repo types this scenario supports */
+  repoType: RepoType;
+  setup: (repo: ScenarioRepo) => Promise<void>;
 }
 
 /**
@@ -64,7 +92,8 @@ export const scenarios = {
   emptyStack: {
     name: "empty-stack",
     description: "Empty stack (just main branch)",
-    setup: async (_repo: LocalRepo) => {
+    repoType: "both",
+    setup: async (_repo: ScenarioRepo) => {
       // No additional setup - just the initial commit on main
     },
   },
@@ -76,7 +105,8 @@ export const scenarios = {
   singleCommit: {
     name: "single-commit",
     description: "Single commit on feature branch",
-    setup: async (repo: LocalRepo) => {
+    repoType: "both",
+    setup: async (repo: ScenarioRepo) => {
       await repo.branch("feature");
       await repo.commit({ message: "Add feature" });
     },
@@ -89,7 +119,8 @@ export const scenarios = {
   multiCommitStack: {
     name: "multi-commit-stack",
     description: "Multi-commit stack (3 commits on feature)",
-    setup: async (repo: LocalRepo) => {
+    repoType: "both",
+    setup: async (repo: ScenarioRepo) => {
       await repo.branch("feature");
       await repo.commit({ message: "First change" });
       await repo.commit({ message: "Second change" });
@@ -100,11 +131,17 @@ export const scenarios = {
   /**
    * Feature branch with upstream changes on main.
    * Simulates the "needs rebase" scenario.
+   * REQUIRES: LocalRepo (uses updateOriginMain)
+   * NOTE: For GitHub repos, requires main branch to allow direct pushes
    */
   divergedMain: {
     name: "diverged-main",
     description: "Feature branch with diverged origin/main (needs rebase)",
-    setup: async (repo: LocalRepo) => {
+    repoType: "both",
+    setup: async (repo: ScenarioRepo) => {
+      if (!hasUpdateOriginMain(repo)) {
+        throw new Error("divergedMain scenario requires updateOriginMain method");
+      }
       await repo.branch("feature");
       await repo.commit({ message: "Feature work" });
       await repo.commit({ message: "More feature work" });
@@ -120,7 +157,8 @@ export const scenarios = {
   withSpryIds: {
     name: "with-spry-ids",
     description: "Stack with Spry-Commit-Id trailers",
-    setup: async (repo: LocalRepo) => {
+    repoType: "both",
+    setup: async (repo: ScenarioRepo) => {
       await repo.branch("feature");
       await repo.commit({
         message: "First commit",
@@ -136,11 +174,17 @@ export const scenarios = {
   /**
    * Setup for testing rebase conflict scenarios.
    * Creates a file that will conflict when rebasing.
+   * REQUIRES: updateOriginMain method
+   * NOTE: For GitHub repos, requires main branch to allow direct pushes
    */
   conflictScenario: {
     name: "conflict-scenario",
     description: "Setup for rebase conflict testing",
-    setup: async (repo: LocalRepo) => {
+    repoType: "both",
+    setup: async (repo: ScenarioRepo) => {
+      if (!hasUpdateOriginMain(repo)) {
+        throw new Error("conflictScenario requires updateOriginMain method");
+      }
       // Create a file that will conflict
       await repo.commitFiles({ "shared.txt": "Original content\n" });
       await $`git -C ${repo.path} push origin main`.quiet();
@@ -161,7 +205,8 @@ export const scenarios = {
   multipleBranches: {
     name: "multiple-branches",
     description: "Multiple feature branches for complex workflows",
-    setup: async (repo: LocalRepo) => {
+    repoType: "both",
+    setup: async (repo: ScenarioRepo) => {
       await repo.branch("feature-a");
       await repo.commit({ message: "Feature A work" });
 
@@ -179,7 +224,8 @@ export const scenarios = {
   mixedTrailerStack: {
     name: "mixed-trailer-stack",
     description: "Stack with some commits missing Spry-Commit-Id",
-    setup: async (repo: LocalRepo) => {
+    repoType: "both",
+    setup: async (repo: ScenarioRepo) => {
       await repo.branch("feature");
       await repo.commit({
         message: "First commit with ID",
@@ -198,7 +244,8 @@ export const scenarios = {
   reorderConflict: {
     name: "reorder-conflict",
     description: "Commits that conflict when reordered (for TUI testing)",
-    setup: async (repo: LocalRepo) => {
+    repoType: "both",
+    setup: async (repo: ScenarioRepo) => {
       await repo.branch("feature");
       // First commit creates a file with specific content
       await repo.commitFiles(
@@ -231,7 +278,8 @@ export const scenarios = {
   withGroups: {
     name: "with-groups",
     description: "Stack with existing group trailers (for dissolve testing)",
-    setup: async (repo: LocalRepo) => {
+    repoType: "both",
+    setup: async (repo: ScenarioRepo) => {
       await repo.branch("feature");
       // Create a group of 2 commits (both have Spry-Group and Spry-Group-Title)
       await repo.commit({
@@ -265,7 +313,8 @@ export const scenarios = {
   splitGroup: {
     name: "split-group",
     description: "Stack with split group (for sync validation testing)",
-    setup: async (repo: LocalRepo) => {
+    repoType: "both",
+    setup: async (repo: ScenarioRepo) => {
       await repo.branch("feature");
       // First commit in group
       await repo.commit({
@@ -300,7 +349,8 @@ export const scenarios = {
   inconsistentGroupTitle: {
     name: "inconsistent-group-title",
     description: "Stack with inconsistent group titles (for sync validation testing)",
-    setup: async (repo: LocalRepo) => {
+    repoType: "both",
+    setup: async (repo: ScenarioRepo) => {
       await repo.branch("feature");
       await repo.commit({
         message: "First grouped commit",
@@ -328,7 +378,8 @@ export const scenarios = {
   mixedGroupStack: {
     name: "mixed-group-stack",
     description: "Mixed stack: ungrouped commits + multi-commit group + single-commit group",
-    setup: async (repo: LocalRepo) => {
+    repoType: "both",
+    setup: async (repo: ScenarioRepo) => {
       await repo.branch("feature");
 
       // 1. Ungrouped commit at the base
@@ -408,7 +459,8 @@ export const scenarios = {
   untrackedAfterIgnored: {
     name: "untracked-after-ignored",
     description: "File added mid-stack then ignored (traditional rebase fails, plumbing succeeds)",
-    setup: async (repo: LocalRepo) => {
+    repoType: "both",
+    setup: async (repo: ScenarioRepo) => {
       await repo.branch("feature");
 
       // Commit 1: anything
