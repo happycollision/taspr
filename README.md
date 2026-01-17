@@ -249,10 +249,15 @@ All grouped commits become one PR when you `sp sync --open`.
 Configure via git config:
 
 ```bash
+# Custom remote name (auto-detected if not set)
+# - If only one remote exists, uses that
+# - If multiple remotes exist, defaults to "origin"
+git config spry.remote upstream
+
 # Custom branch prefix (default: "spry")
 git config spry.branchPrefix my-prefix
 
-# Custom default branch (auto-detected if not set)
+# Custom default branch (auto-detected from remote if not set)
 git config spry.defaultBranch main
 
 # Temporary commit prefixes (default: "WIP,fixup!,amend!,squash!")
@@ -419,8 +424,8 @@ sp clean            # Delete orphaned branches
 ## Limitations
 
 - **No concurrent operation support**: Don't run multiple `sp` commands simultaneously in the same local clone. Not sure why anyone would do this anyway.
-- **Remote must be named "origin"**: Spry assumes the GitHub remote is named `origin`. Custom remote names (e.g., `upstream`, `github`) are not supported.
-- **Default branch auto-detected**: The default branch is auto-detected from origin (usually `main` or `master`). Override with `git config spry.defaultBranch <branch>` if needed.
+- **Remote auto-detected**: If you have multiple remotes and none is named `origin`, set `git config spry.remote <name>` to specify which one to use.
+- **Default branch auto-detected**: The default branch is auto-detected from the remote (usually `main` or `master`). Override with `git config spry.defaultBranch <branch>` if needed.
 
 ## Development
 
