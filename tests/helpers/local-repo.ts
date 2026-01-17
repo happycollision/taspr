@@ -32,6 +32,8 @@ export interface CreateRepoOptions {
   testName?: string;
   /** Default branch name (default: "main") */
   defaultBranch?: string;
+  /** Remote name (default: "origin") */
+  remoteName?: string;
 }
 
 /**
@@ -46,6 +48,7 @@ async function createLocalRepo(ctx: TestContext, options?: CreateRepoOptions): P
   return createLocalRepoCore(ctx, {
     scenarioName: options?.testName,
     defaultBranch: options?.defaultBranch,
+    remoteName: options?.remoteName,
   });
 }
 

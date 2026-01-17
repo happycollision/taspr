@@ -60,6 +60,8 @@ export interface CreateRepoOptions {
   scenarioName?: string;
   /** Default branch name (default: "main") */
   defaultBranch?: string;
+  /** Remote name (default: "origin") */
+  remoteName?: string;
 }
 
 /** A local git repository with a bare origin */
@@ -72,6 +74,8 @@ export interface LocalRepo {
   readonly uniqueId: string;
   /** Default branch name (e.g., "main", "master", "develop") */
   readonly defaultBranch: string;
+  /** Remote name (e.g., "origin", "upstream") */
+  readonly remoteName: string;
 
   /** Create a commit with auto-generated file */
   commit(options?: CommitOptions): Promise<string>;
@@ -106,10 +110,11 @@ interface RepoMethodsConfig {
   path: string;
   ctx: ScenarioContext;
   cleanupFn: () => Promise<void>;
+  remoteName?: string;
 }
 
 function createRepoMethods(config: RepoMethodsConfig) {
-  const { path, ctx, cleanupFn } = config;
+  const { path, ctx, cleanupFn, remoteName = "origin" } = config;
   let fileCounter = 0;
 
   return {
@@ -165,7 +170,7 @@ function createRepoMethods(config: RepoMethodsConfig) {
     },
 
     async fetch(): Promise<void> {
-      await $`git -C ${path} fetch origin`.quiet();
+      await $`git -C ${path} fetch ${remoteName}`.quiet();
     },
 
     async currentBranch(): Promise<string> {
@@ -192,6 +197,7 @@ export async function createLocalRepo(
   }
 
   const defaultBranch = options?.defaultBranch ?? "main";
+  const remoteName = options?.remoteName ?? "origin";
 
   // Create the "origin" bare repository first
   const originPath = await mkdtemp(join(tmpdir(), "spry-test-origin-"));
@@ -205,8 +211,8 @@ export async function createLocalRepo(
   await $`git -C ${path} config user.email "test@example.com"`.quiet();
   await $`git -C ${path} config user.name "Test User"`.quiet();
 
-  // Add origin remote pointing to the bare repo
-  await $`git -C ${path} remote add origin ${originPath}`.quiet();
+  // Add remote pointing to the bare repo
+  await $`git -C ${path} remote add ${remoteName} ${originPath}`.quiet();
 
   // Create initial commit on default branch
   const readmePath = join(path, "README.md");
@@ -214,12 +220,13 @@ export async function createLocalRepo(
   await $`git -C ${path} add .`.quiet();
   await $`git -C ${path} commit -m "Initial commit"`.quiet();
 
-  // Push to origin so origin/<defaultBranch> exists
-  await $`git -C ${path} push -u origin ${defaultBranch}`.quiet();
+  // Push to remote so <remoteName>/<defaultBranch> exists
+  await $`git -C ${path} push -u ${remoteName} ${defaultBranch}`.quiet();
 
   const methods = createRepoMethods({
     path,
     ctx,
+    remoteName,
     cleanupFn: async () => {
       await rm(path, { recursive: true, force: true });
       await rm(originPath, { recursive: true, force: true });
@@ -230,6 +237,7 @@ export async function createLocalRepo(
     path,
     originPath,
     defaultBranch,
+    remoteName,
     ...methods,
 
     async updateOriginMain(message: string, files?: Record<string, string>): Promise<void> {
@@ -250,6 +258,7 @@ export async function createLocalRepo(
 
         await $`git -C ${tempWorktree} add .`.quiet();
         await $`git -C ${tempWorktree} commit -m ${message}`.quiet();
+        // Note: the cloned worktree always has "origin" as its remote
         await $`git -C ${tempWorktree} push origin ${defaultBranch}`.quiet();
       } finally {
         await rm(tempWorktree, { recursive: true, force: true });

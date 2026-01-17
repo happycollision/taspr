@@ -249,6 +249,23 @@ describe("git/config", () => {
 
       expect(branch).toBe("main");
     });
+
+    test("works with repo created with custom remote name", async () => {
+      const repo = await repos.create({ remoteName: "upstream" });
+      process.chdir(repo.path);
+
+      // The repo should have "upstream" as its remote, not "origin"
+      const remotes = (await $`git remote`.text()).trim().split("\n");
+      expect(remotes).toEqual(["upstream"]);
+
+      // Remote detection should find the single remote
+      const remote = await detectRemote();
+      expect(remote).toBe("upstream");
+
+      // Default branch detection should work
+      const branch = await detectDefaultBranch("upstream");
+      expect(branch).toBe("main");
+    });
   });
 
   describe("getDefaultBranchRef", () => {
