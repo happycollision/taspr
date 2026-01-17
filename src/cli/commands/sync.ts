@@ -173,17 +173,20 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
 
     // Try to fast-forward local main if it's behind origin
     const localMainStatus = await getLocalMainStatus();
-    if (localMainStatus.canFastForward) {
-      await fastForwardLocalMain();
-      const config = await getSpryConfig();
-      console.log(
-        `✓ Fast-forwarded local ${config.defaultBranch} (${localMainStatus.commitsBehind} commit(s))`,
-      );
-    } else if (localMainStatus.isBehind && !localMainStatus.canFastForward) {
-      const config = await getSpryConfig();
-      console.log(
-        `⚠ Local ${config.defaultBranch} is ${localMainStatus.commitsBehind} commit(s) behind but has ${localMainStatus.commitsAhead} local commit(s)`,
-      );
+    if (localMainStatus.isBehind) {
+      const ffResult = await fastForwardLocalMain();
+      if (ffResult.performed) {
+        const config = await getSpryConfig();
+        console.log(
+          `✓ Fast-forwarded local ${config.defaultBranch} (${localMainStatus.commitsBehind} commit(s))`,
+        );
+      } else if (ffResult.skippedReason === "diverged") {
+        const config = await getSpryConfig();
+        console.log(
+          `⚠ Local ${config.defaultBranch} is ${localMainStatus.commitsBehind} commit(s) behind but has ${localMainStatus.commitsAhead} local commit(s)`,
+        );
+      }
+      // "on-main-branch" and "up-to-date" are silent skips
     }
 
     // If stack is behind origin/main, rebase onto it

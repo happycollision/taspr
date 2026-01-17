@@ -195,6 +195,50 @@ describe("sync: local behavior", () => {
     ).trim();
     expect(remoteBranches).toBe("");
   });
+
+  test("rebases onto origin/main even when local main has diverged", async () => {
+    const repo = await repos.create();
+
+    // Create feature branch with a commit
+    await repo.branch("feature");
+    await repo.commit({ message: "Feature commit" });
+
+    // Go back to main and add a local commit (simulating user working on main)
+    await repo.checkout("main");
+    await repo.commit({ message: "Local main commit" });
+
+    // Also add a commit to origin/main (so local main has diverged)
+    await repo.updateOriginMain("Remote main commit");
+
+    // Go back to feature branch
+    await repo.checkout(await repo.currentBranch().then(() => "feature-" + repo.uniqueId));
+
+    // Run sync - should warn about local main but still rebase onto origin/main
+    const result = await runSync(repo.path);
+
+    expect(result.exitCode).toBe(0);
+    // Should warn about local main being diverged
+    expect(result.stdout).toContain("local commit(s)");
+    // Should still rebase the feature branch onto origin/main
+    expect(result.stdout).toContain("Rebased");
+  });
+
+  test("skips fast-forward when on the main branch (would dirty worktree)", async () => {
+    const repo = await repos.create();
+
+    // Stay on main (don't create a feature branch)
+    // Add a commit to origin/main so local is behind
+    await repo.updateOriginMain("Remote commit");
+
+    // Run sync while on main with no commits in stack
+    const result = await runSync(repo.path);
+
+    expect(result.exitCode).toBe(0);
+    // When on main with no stack commits, we shouldn't try to fast-forward
+    // because that would require checking out main (which we're already on)
+    // The current behavior is to just report "No commits in stack"
+    expect(result.stdout).toContain("No commits in stack");
+  });
 });
 
 // ============================================================================

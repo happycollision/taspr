@@ -139,7 +139,7 @@ describe("git/behind", () => {
       expect(mainBefore).not.toBe(remoteSha);
 
       const result = await fastForwardLocalMain({ cwd: repo.path });
-      expect(result).toBe(true);
+      expect(result.performed).toBe(true);
 
       // Verify local main now matches origin/main
       const mainAfter = (
@@ -148,26 +148,33 @@ describe("git/behind", () => {
       expect(mainAfter).toBe(remoteSha);
     });
 
-    test("returns false when already up-to-date", async () => {
+    test("returns up-to-date when already up-to-date", async () => {
       const repo = await repos.create();
       await scenarios.singleCommit.setup(repo);
       await repo.fetch();
 
       const result = await fastForwardLocalMain({ cwd: repo.path });
-      expect(result).toBe(false);
+      expect(result.performed).toBe(false);
+      expect(result.skippedReason).toBe("up-to-date");
     });
 
-    test("throws when local main has diverged", async () => {
+    test("returns diverged when local main has local commits", async () => {
       const repo = await repos.create();
-      // Add local commit on main
-      await repo.commit({ message: "Local commit" });
+      await scenarios.singleCommit.setup(repo);
+
+      // Go back to main and add a local commit
+      await repo.checkout("main");
+      await repo.commit({ message: "Local commit on main" });
       // Add remote commit (creates divergence)
       await repo.updateOriginMain("Remote commit");
       await repo.fetch();
 
-      await expect(fastForwardLocalMain({ cwd: repo.path })).rejects.toThrow(
-        /Cannot fast-forward/,
-      );
+      // Go to feature branch so we're not on main
+      await repo.branch("test-feature");
+
+      const result = await fastForwardLocalMain({ cwd: repo.path });
+      expect(result.performed).toBe(false);
+      expect(result.skippedReason).toBe("diverged");
     });
 
     test("works while on a feature branch", async () => {
@@ -180,11 +187,23 @@ describe("git/behind", () => {
 
       // We're on feature branch, but should still be able to ff local main
       const result = await fastForwardLocalMain({ cwd: repo.path });
-      expect(result).toBe(true);
+      expect(result.performed).toBe(true);
 
       // Verify we're still on our feature branch
       const currentBranch = await repo.currentBranch();
       expect(currentBranch).not.toBe("main");
+    });
+
+    test("skips when currently on the main branch", async () => {
+      const repo = await repos.create();
+      // Stay on main (no feature branch)
+      await repo.updateOriginMain("Remote commit");
+      await repo.fetch();
+
+      // Should skip when on main to avoid desyncing worktree
+      const result = await fastForwardLocalMain({ cwd: repo.path });
+      expect(result.performed).toBe(false);
+      expect(result.skippedReason).toBe("on-main-branch");
     });
   });
 });

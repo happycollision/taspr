@@ -1,5 +1,6 @@
 import { $ } from "bun";
 import type { GitOptions } from "./commands.ts";
+import { getCurrentBranch } from "./commands.ts";
 import { getDefaultBranchRef, getSpryConfig } from "./config.ts";
 
 export interface LocalMainStatus {
@@ -53,31 +54,45 @@ export async function getLocalMainStatus(options: GitOptions = {}): Promise<Loca
   };
 }
 
+export interface FastForwardResult {
+  /** Whether fast-forward was performed */
+  performed: boolean;
+  /** Reason for skipping (if not performed) */
+  skippedReason?: "up-to-date" | "on-main-branch" | "diverged";
+}
+
 /**
  * Fast-forward the local main branch to match remote main.
  * Does NOT checkout main - updates the ref directly.
  * Only succeeds if local main is strictly behind remote (no divergence).
  *
- * @returns true if fast-forward was performed, false if already up-to-date
- * @throws Error if local main has diverged and cannot be fast-forwarded
+ * Skips (returns performed: false) when:
+ * - Already up-to-date
+ * - Currently on the main branch (would desync worktree)
+ * - Local main has diverged (has local commits not on remote)
+ *
+ * @returns Result indicating whether fast-forward was performed and why it was skipped
  */
-export async function fastForwardLocalMain(options: GitOptions = {}): Promise<boolean> {
+export async function fastForwardLocalMain(options: GitOptions = {}): Promise<FastForwardResult> {
   const { cwd } = options;
   const config = await getSpryConfig();
   const localMain = config.defaultBranch;
   const remoteMain = `${config.remote}/${config.defaultBranch}`;
 
+  // Skip if currently on main branch - updating ref would desync with worktree
+  const currentBranch = await getCurrentBranch(options);
+  if (currentBranch === localMain) {
+    return { performed: false, skippedReason: "on-main-branch" };
+  }
+
   const status = await getLocalMainStatus(options);
 
   if (!status.isBehind) {
-    return false; // Already up-to-date
+    return { performed: false, skippedReason: "up-to-date" };
   }
 
   if (!status.canFastForward) {
-    throw new Error(
-      `Cannot fast-forward local '${localMain}': it has ${status.commitsAhead} local commit(s) not on ${remoteMain}.\n` +
-        `This may indicate unpushed changes on your local ${localMain} branch.`,
-    );
+    return { performed: false, skippedReason: "diverged" };
   }
 
   // Get the SHA of the remote main
@@ -92,7 +107,7 @@ export async function fastForwardLocalMain(options: GitOptions = {}): Promise<bo
     await $`git update-ref refs/heads/${localMain} ${remoteSha}`.quiet();
   }
 
-  return true;
+  return { performed: true };
 }
 
 /**
