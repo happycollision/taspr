@@ -436,11 +436,11 @@ export async function runGroupEditor(): Promise<GroupEditorResult> {
   // Read group titles from ref storage
   const groupTitles = await readGroupTitles();
 
-  // Validate existing stack
+  // Check for group errors (e.g., split groups) but don't block
   const validation = parseStack(commits, groupTitles);
   if (!validation.ok) {
     console.log(formatValidationError(validation));
-    return { changed: false, error: "Stack validation failed" };
+    console.log(""); // blank line before TUI
   }
 
   // Convert to display format
