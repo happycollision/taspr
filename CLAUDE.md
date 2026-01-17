@@ -36,11 +36,10 @@ Default to using Bun instead of Node.js.
 
 ## Testing
 
-Use `bun test` to run tests.
+Use `bun test` to run tests ONLY after you have checked the version of Git that is installed. If it is less than 2.40, use the `<command>:docker` alias for all `bun run` commands that have a docker alias. (See package.json).
 
-If you change code that needs github integration, run the integration tests via either `test:github` or `test:ci`. 
+If you change code that needs github integration, run the integration tests via either `test:github` (skips CI dependent tests for speed) or `test:ci` (runs all github tests). 
 
-If using a machine with and older Git than is supported, use the `:docker` alias for all `bun run` commands. (See package.json).
 
 
 ```ts#index.test.ts
