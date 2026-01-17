@@ -29,7 +29,7 @@ export async function getMergeBase(options: GitOptions = {}): Promise<string> {
     if (remoteCheck.exitCode !== 0) {
       const config = await getSpryConfig();
       throw new Error(
-        `No ${defaultBranchRef} branch found. Please ensure you have a remote named 'origin' with a '${config.defaultBranch}' branch, or set a different default branch with: git config spry.defaultBranch <branch>`,
+        `No ${defaultBranchRef} branch found. Please ensure you have a remote named '${config.remote}' with a '${config.defaultBranch}' branch, or set a different default branch with: git config spry.defaultBranch <branch>`,
       );
     }
     throw new Error(`Failed to find merge-base with ${defaultBranchRef}`);

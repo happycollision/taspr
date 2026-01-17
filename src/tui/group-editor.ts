@@ -423,7 +423,7 @@ export async function runGroupEditor(): Promise<GroupEditorResult> {
 
   // Get config
   const config = await getSpryConfig();
-  const defaultBranch = `origin/${config.defaultBranch}`;
+  const defaultBranch = `${config.remote}/${config.defaultBranch}`;
 
   // Get commits
   const commits = await getStackCommitsWithTrailers();

@@ -1,6 +1,7 @@
 import { $ } from "bun";
 import { ensureGhInstalled } from "./api.ts";
 import { ghExecWithLimit } from "./retry.ts";
+import { getSpryConfig } from "../git/config.ts";
 
 export interface LandResult {
   sha: string;
@@ -391,9 +392,10 @@ export async function getPRCommentStatus(prNumber: number, repo?: string): Promi
     owner = parts[0];
     repoName = parts[1];
   } else {
-    const remoteResult = await $`git remote get-url origin`.quiet().nothrow();
+    const config = await getSpryConfig();
+    const remoteResult = await $`git remote get-url ${config.remote}`.quiet().nothrow();
     if (remoteResult.exitCode !== 0) {
-      throw new Error("Failed to get git remote URL");
+      throw new Error(`Failed to get git remote URL for '${config.remote}'`);
     }
     const remoteUrl = remoteResult.stdout.toString().trim();
     // Parse owner/repo from git remote URL
@@ -577,7 +579,8 @@ export async function landPR(prNumber: number, targetBranch: string = "main"): P
   }
 
   // Push the head commit to the target branch (fast-forward)
-  const pushResult = await $`git push origin ${headSha}:refs/heads/${targetBranch}`
+  const config = await getSpryConfig();
+  const pushResult = await $`git push ${config.remote} ${headSha}:refs/heads/${targetBranch}`
     .quiet()
     .nothrow();
 
@@ -598,11 +601,13 @@ export async function landPR(prNumber: number, targetBranch: string = "main"): P
  * Returns true if targetBranch is an ancestor of headSha.
  */
 async function canFastForward(targetBranch: string, headSha: string): Promise<boolean> {
-  // Fetch latest from origin first
-  await $`git fetch origin ${targetBranch}`.quiet().nothrow();
+  const config = await getSpryConfig();
 
-  // Check if origin/targetBranch is an ancestor of headSha
-  const result = await $`git merge-base --is-ancestor origin/${targetBranch} ${headSha}`
+  // Fetch latest from remote first
+  await $`git fetch ${config.remote} ${targetBranch}`.quiet().nothrow();
+
+  // Check if remote/targetBranch is an ancestor of headSha
+  const result = await $`git merge-base --is-ancestor ${config.remote}/${targetBranch} ${headSha}`
     .quiet()
     .nothrow();
 
@@ -613,7 +618,8 @@ async function canFastForward(targetBranch: string, headSha: string): Promise<bo
  * Delete a remote branch after landing.
  */
 export async function deleteRemoteBranch(branchName: string): Promise<void> {
-  await $`git push origin --delete ${branchName}`.quiet().nothrow();
+  const config = await getSpryConfig();
+  await $`git push ${config.remote} --delete ${branchName}`.quiet().nothrow();
 }
 
 /**

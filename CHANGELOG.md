@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Configurable remote name via `spry.remote` config option (no longer hardcoded to 'origin')
+- Smart remote auto-detection: uses single remote if only one exists (persists to config), falls back to 'origin' if present among multiple, or prompts user to configure
+
 ### Changed
 
 - Show progress feedback ("Creating PR for... #number") when opening PRs for the first time

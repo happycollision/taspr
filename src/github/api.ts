@@ -1,5 +1,6 @@
 import { $ } from "bun";
 import { ghExecWithLimit } from "./retry.ts";
+import { getSpryConfig } from "../git/config.ts";
 
 export class GitHubAuthError extends Error {
   constructor(message: string) {
@@ -81,8 +82,9 @@ export async function getDefaultBranch(): Promise<string> {
     return cachedDefaultBranch;
   }
 
-  // Fall back to origin's default
-  const remoteResult = await $`git remote show origin`.quiet().nothrow();
+  // Fall back to configured remote's default
+  const config = await getSpryConfig();
+  const remoteResult = await $`git remote show ${config.remote}`.quiet().nothrow();
   if (remoteResult.exitCode === 0) {
     const remote = remoteResult.stdout.toString();
     const match = remote.match(/HEAD branch: (\S+)/);
@@ -99,7 +101,7 @@ export async function getDefaultBranch(): Promise<string> {
   );
 }
 
-let cachedOriginUrl: string | null = null;
+let cachedRemoteUrl: string | null = null;
 
 /**
  * Check if a remote URL is a GitHub repository.
@@ -109,32 +111,33 @@ export function isGitHubUrl(url: string): boolean {
 }
 
 /**
- * Get the origin remote URL.
+ * Get the configured remote's URL.
  * Result is memoized for the lifetime of the process.
  */
-async function getOriginUrl(): Promise<string> {
-  if (cachedOriginUrl !== null) {
-    return cachedOriginUrl;
+async function getRemoteUrl(): Promise<string> {
+  if (cachedRemoteUrl !== null) {
+    return cachedRemoteUrl;
   }
 
-  const result = await $`git remote get-url origin`.quiet().nothrow();
+  const config = await getSpryConfig();
+  const result = await $`git remote get-url ${config.remote}`.quiet().nothrow();
   if (result.exitCode !== 0) {
     throw new ConfigurationError(
-      "No 'origin' remote found. Spry requires a git repository with an 'origin' remote.",
+      `No '${config.remote}' remote found. Spry requires a git repository with a configured remote.`,
     );
   }
 
-  cachedOriginUrl = result.stdout.toString().trim();
-  return cachedOriginUrl;
+  cachedRemoteUrl = result.stdout.toString().trim();
+  return cachedRemoteUrl;
 }
 
 /**
- * Check if the origin remote is a GitHub repository.
- * Returns false if origin is not set or is not on github.com.
+ * Check if the configured remote is a GitHub repository.
+ * Returns false if remote is not set or is not on github.com.
  */
 export async function isGitHubOrigin(): Promise<boolean> {
   try {
-    const url = await getOriginUrl();
+    const url = await getRemoteUrl();
     return isGitHubUrl(url);
   } catch {
     return false;
@@ -142,11 +145,11 @@ export async function isGitHubOrigin(): Promise<boolean> {
 }
 
 /**
- * Require that the origin is a GitHub repository.
+ * Require that the configured remote is a GitHub repository.
  * Throws a descriptive error if it's not.
  */
 export async function requireGitHubOrigin(): Promise<void> {
-  const url = await getOriginUrl();
+  const url = await getRemoteUrl();
 
   if (!isGitHubUrl(url)) {
     throw new NonGitHubOriginError(

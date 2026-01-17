@@ -3,6 +3,7 @@ import { $ } from "bun";
 import { repoManager } from "../../tests/helpers/local-repo.ts";
 import {
   getSpryConfig,
+  detectRemote,
   detectDefaultBranch,
   getDefaultBranchRef,
   isTempCommit,
@@ -29,7 +30,21 @@ describe("git/config", () => {
       const config = await getSpryConfig();
 
       expect(config.branchPrefix).toBe("spry");
+      expect(config.remote).toBe("origin");
       expect(config.defaultBranch).toBe("main");
+    });
+
+    test("reads custom remote from git config", async () => {
+      const repo = await repos.create();
+      process.chdir(repo.path);
+
+      // Add upstream remote and configure it
+      await $`git remote add upstream ${repo.originPath}`.quiet();
+      await $`git config spry.remote upstream`.quiet();
+
+      const config = await getSpryConfig();
+
+      expect(config.remote).toBe("upstream");
     });
 
     test("reads custom branchPrefix from git config", async () => {
@@ -68,12 +83,79 @@ describe("git/config", () => {
     });
   });
 
+  describe("detectRemote", () => {
+    test("returns configured remote when provided", async () => {
+      const remote = await detectRemote("upstream");
+      expect(remote).toBe("upstream");
+    });
+
+    test("returns single remote and persists to config", async () => {
+      const repo = await repos.create();
+      process.chdir(repo.path);
+
+      const remote = await detectRemote();
+      expect(remote).toBe("origin");
+
+      // Should have persisted to config
+      const configResult = await $`git config --get spry.remote`.text();
+      expect(configResult.trim()).toBe("origin");
+    });
+
+    test("returns origin when multiple remotes exist and origin is present", async () => {
+      const repo = await repos.create();
+      process.chdir(repo.path);
+
+      // Add a second remote
+      await $`git remote add upstream ${repo.originPath}`.quiet();
+
+      const remote = await detectRemote();
+      expect(remote).toBe("origin");
+    });
+
+    test("throws when multiple remotes exist and no origin", async () => {
+      const repo = await repos.create();
+      process.chdir(repo.path);
+
+      // Rename origin to something else and add another
+      await $`git remote rename origin upstream`.quiet();
+      await $`git remote add fork ${repo.originPath}`.quiet();
+
+      await expect(detectRemote()).rejects.toThrow("Multiple remotes found");
+      // Check that both remotes are listed (order may vary)
+      await expect(detectRemote()).rejects.toThrow(/upstream.*fork|fork.*upstream/);
+    });
+
+    test("throws when no remotes exist", async () => {
+      const repo = await repos.create();
+      process.chdir(repo.path);
+
+      await $`git remote remove origin`.quiet();
+
+      await expect(detectRemote()).rejects.toThrow("No git remotes found");
+    });
+
+    test("uses non-origin remote when it is the only one", async () => {
+      const repo = await repos.create();
+      process.chdir(repo.path);
+
+      // Rename origin to upstream
+      await $`git remote rename origin upstream`.quiet();
+
+      const remote = await detectRemote();
+      expect(remote).toBe("upstream");
+
+      // Should have persisted to config
+      const configResult = await $`git config --get spry.remote`.text();
+      expect(configResult.trim()).toBe("upstream");
+    });
+  });
+
   describe("detectDefaultBranch", () => {
     test("detects main branch from origin", async () => {
       const repo = await repos.create();
       process.chdir(repo.path);
 
-      const branch = await detectDefaultBranch();
+      const branch = await detectDefaultBranch("origin");
 
       expect(branch).toBe("main");
     });
@@ -88,19 +170,18 @@ describe("git/config", () => {
       await $`git branch -m main master`.quiet();
       await $`git branch -u origin/master master`.quiet();
 
-      const branch = await detectDefaultBranch();
+      const branch = await detectDefaultBranch("origin");
 
       expect(branch).toBe("master");
     });
 
-    test("throws error when no default branch can be detected", async () => {
+    test("throws error when remote does not exist", async () => {
       const repo = await repos.create();
       process.chdir(repo.path);
 
-      // Remove origin remote
-      await $`git remote remove origin`.quiet();
-
-      expect(detectDefaultBranch()).rejects.toThrow("Could not detect default branch");
+      await expect(detectDefaultBranch("nonexistent")).rejects.toThrow(
+        "Could not detect default branch for remote 'nonexistent'",
+      );
     });
 
     test("detects develop branch from origin", async () => {
@@ -114,7 +195,7 @@ describe("git/config", () => {
       await $`git branch -m main develop`.quiet();
       await $`git branch -u origin/develop develop`.quiet();
 
-      const branch = await detectDefaultBranch();
+      const branch = await detectDefaultBranch("origin");
 
       expect(branch).toBe("develop");
     });
@@ -130,7 +211,7 @@ describe("git/config", () => {
       await $`git branch -m main trunk`.quiet();
       await $`git branch -u origin/trunk trunk`.quiet();
 
-      const branch = await detectDefaultBranch();
+      const branch = await detectDefaultBranch("origin");
 
       expect(branch).toBe("trunk");
     });
@@ -140,7 +221,7 @@ describe("git/config", () => {
       const repo = await repos.create({ defaultBranch: "master" });
       process.chdir(repo.path);
 
-      const branch = await detectDefaultBranch();
+      const branch = await detectDefaultBranch("origin");
 
       expect(branch).toBe("master");
       expect(repo.defaultBranch).toBe("master");
@@ -151,10 +232,22 @@ describe("git/config", () => {
       const repo = await repos.create({ defaultBranch: "develop" });
       process.chdir(repo.path);
 
-      const branch = await detectDefaultBranch();
+      const branch = await detectDefaultBranch("origin");
 
       expect(branch).toBe("develop");
       expect(repo.defaultBranch).toBe("develop");
+    });
+
+    test("detects default branch from non-origin remote", async () => {
+      const repo = await repos.create();
+      process.chdir(repo.path);
+
+      // Rename origin to upstream
+      await $`git remote rename origin upstream`.quiet();
+
+      const branch = await detectDefaultBranch("upstream");
+
+      expect(branch).toBe("main");
     });
   });
 
@@ -177,6 +270,19 @@ describe("git/config", () => {
       const ref = await getDefaultBranchRef();
 
       expect(ref).toBe("origin/develop");
+    });
+
+    test("returns custom remote/branch ref when both configured", async () => {
+      const repo = await repos.create();
+      process.chdir(repo.path);
+
+      await $`git remote add upstream ${repo.originPath}`.quiet();
+      await $`git config spry.remote upstream`.quiet();
+      await $`git config spry.defaultBranch develop`.quiet();
+
+      const ref = await getDefaultBranchRef();
+
+      expect(ref).toBe("upstream/develop");
     });
   });
 

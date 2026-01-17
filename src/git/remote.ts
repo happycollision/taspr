@@ -4,6 +4,7 @@ import type { BranchNameConfig } from "../github/branches.ts";
 import { getBranchName } from "../github/branches.ts";
 import type { GitOptions } from "./commands.ts";
 import { asserted } from "../utils/assert.ts";
+import { getSpryConfig } from "./config.ts";
 
 export interface SyncStatus {
   branchName: string;
@@ -23,8 +24,9 @@ export async function getRemoteBranchCommit(
 ): Promise<string | null> {
   const { cwd } = options;
   const cwdArgs = cwd ? ["-C", cwd] : [];
+  const config = await getSpryConfig();
 
-  const result = await $`git ${cwdArgs} rev-parse origin/${branchName}`.nothrow().quiet();
+  const result = await $`git ${cwdArgs} rev-parse ${config.remote}/${branchName}`.nothrow().quiet();
 
   if (result.exitCode !== 0) {
     return null; // Branch doesn't exist on remote
@@ -69,7 +71,8 @@ export async function getAllSyncStatuses(
   // Fetch remote refs once to ensure we have latest state
   const { cwd } = options;
   const cwdArgs = cwd ? ["-C", cwd] : [];
-  await $`git ${cwdArgs} fetch origin`.nothrow().quiet();
+  const spryConfig = await getSpryConfig();
+  await $`git ${cwdArgs} fetch ${spryConfig.remote}`.nothrow().quiet();
 
   for (const unit of units) {
     const status = await getSyncStatus(unit, config, options);

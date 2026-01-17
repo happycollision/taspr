@@ -64,7 +64,7 @@ export async function formatStackView(
   commitCount: number,
 ): Promise<string> {
   const config = await getSpryConfig();
-  const defaultBranchRef = `origin/${config.defaultBranch}`;
+  const defaultBranchRef = `${config.remote}/${config.defaultBranch}`;
 
   if (units.length === 0) {
     return `No commits ahead of ${defaultBranchRef}`;

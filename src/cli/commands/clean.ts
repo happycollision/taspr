@@ -7,6 +7,7 @@ import {
   ConfigurationError,
 } from "../../github/api.ts";
 import { deleteRemoteBranch } from "../../github/pr.ts";
+import { getSpryConfig } from "../../git/config.ts";
 
 export interface CleanOptions {
   dryRun?: boolean;
@@ -29,8 +30,9 @@ interface OrphanedBranch {
 async function listSpryBranches(
   branchConfig: Awaited<ReturnType<typeof getBranchNameConfig>>,
 ): Promise<string[]> {
+  const config = await getSpryConfig();
   const result =
-    await $`git branch -r --list "origin/${branchConfig.prefix}/${branchConfig.username}/*"`
+    await $`git branch -r --list "${config.remote}/${branchConfig.prefix}/${branchConfig.username}/*"`
       .quiet()
       .nothrow();
 
@@ -38,20 +40,25 @@ async function listSpryBranches(
     return [];
   }
 
+  const remotePrefix = new RegExp(`^${config.remote}/`);
   return result.stdout
     .toString()
     .trim()
     .split("\n")
     .map((b) => b.trim())
     .filter((b) => b)
-    .map((b) => b.replace(/^origin\//, "")); // Remove "origin/" prefix
+    .map((b) => b.replace(remotePrefix, "")); // Remove "<remote>/" prefix
 }
 
 /**
  * Check if a commit is reachable from the default branch (i.e., merged).
  */
-async function isCommitMerged(commitSha: string, defaultBranch: string): Promise<boolean> {
-  const result = await $`git merge-base --is-ancestor ${commitSha} origin/${defaultBranch}`
+async function isCommitMerged(
+  commitSha: string,
+  defaultBranch: string,
+  remote: string,
+): Promise<boolean> {
+  const result = await $`git merge-base --is-ancestor ${commitSha} ${remote}/${defaultBranch}`
     .quiet()
     .nothrow();
   return result.exitCode === 0;
@@ -65,9 +72,10 @@ async function isCommitMerged(commitSha: string, defaultBranch: string): Promise
 async function isCommitIdInDefaultBranch(
   commitId: string,
   defaultBranch: string,
+  remote: string,
 ): Promise<boolean> {
   const pattern = `Spry-Commit-Id: ${commitId}`;
-  const result = await $`git log --grep=${pattern} --oneline origin/${defaultBranch} -1`
+  const result = await $`git log --grep=${pattern} --oneline ${remote}/${defaultBranch} -1`
     .quiet()
     .nothrow();
   return result.exitCode === 0 && result.stdout.toString().trim().length > 0;
@@ -85,8 +93,8 @@ function extractCommitIdFromBranch(branchName: string): string | null {
 /**
  * Get the HEAD commit SHA of a remote branch.
  */
-async function getBranchHeadSha(branchName: string): Promise<string | null> {
-  const result = await $`git rev-parse origin/${branchName}`.quiet().nothrow();
+async function getBranchHeadSha(branchName: string, remote: string): Promise<string | null> {
+  const result = await $`git rev-parse ${remote}/${branchName}`.quiet().nothrow();
   if (result.exitCode !== 0) {
     return null;
   }
@@ -103,18 +111,20 @@ async function findOrphanedBranches(
   branchConfig: Awaited<ReturnType<typeof getBranchNameConfig>>,
   defaultBranch: string,
 ): Promise<OrphanedBranch[]> {
-  // Fetch latest from origin first
-  await $`git fetch origin`.quiet().nothrow();
+  const config = await getSpryConfig();
+
+  // Fetch latest from remote first
+  await $`git fetch ${config.remote}`.quiet().nothrow();
 
   const branches = await listSpryBranches(branchConfig);
   const orphaned: OrphanedBranch[] = [];
 
   for (const branch of branches) {
-    const sha = await getBranchHeadSha(branch);
+    const sha = await getBranchHeadSha(branch, config.remote);
     if (!sha) continue;
 
     // First check: is the exact commit SHA merged?
-    const shaMerged = await isCommitMerged(sha, defaultBranch);
+    const shaMerged = await isCommitMerged(sha, defaultBranch, config.remote);
     if (shaMerged) {
       orphaned.push({
         name: branch,
@@ -124,11 +134,11 @@ async function findOrphanedBranches(
       continue;
     }
 
-    // Second check: does the commit-id trailer exist in main?
+    // Second check: does the commit-id trailer exist in the default branch?
     // This handles squash merges, amended commits, etc.
     const commitId = extractCommitIdFromBranch(branch);
     if (commitId) {
-      const trailerFound = await isCommitIdInDefaultBranch(commitId, defaultBranch);
+      const trailerFound = await isCommitIdInDefaultBranch(commitId, defaultBranch, config.remote);
       if (trailerFound) {
         orphaned.push({
           name: branch,
