@@ -177,7 +177,9 @@ export function formatValidationError(result: Exclude<StackParseResult, { ok: tr
       }
       lines.push("");
       lines.push("  This can happen when fixup! commits are squashed into a group.");
-      lines.push("  To fix, run `sp group --fix` to merge or dissolve the group.");
+      lines.push("  To fix:");
+      lines.push("    sp group --fix   Guided repair (merge or dissolve)");
+      lines.push("    sp group         Manual fix via the group editor");
       break;
     }
   }

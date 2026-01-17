@@ -418,7 +418,7 @@ async function repairSplitGroup(
 ): Promise<void> {
   const errorSummary = formatErrorSummary(validation);
 
-  type RepairAction = "merge" | "dissolve-group" | "dissolve-all";
+  type RepairAction = "merge" | "dissolve-group" | "dissolve-all" | "manual";
 
   const options: Array<{ label: string; value: RepairAction; description: string }> = [
     {
@@ -435,6 +435,11 @@ async function repairSplitGroup(
       label: "Dissolve all groups",
       value: "dissolve-all",
       description: "Remove ALL group trailers from the stack",
+    },
+    {
+      label: "Manual fix",
+      value: "manual",
+      description: "Open the group editor to fix manually",
     },
   ];
 
@@ -485,6 +490,15 @@ async function repairSplitGroup(
       }
 
       console.log("✓ All group trailers removed.");
+      break;
+    }
+
+    case "manual": {
+      // Launch the regular group editor for manual fixing
+      const editorResult = await runGroupEditor();
+      if (editorResult.error) {
+        process.exit(1);
+      }
       break;
     }
   }
