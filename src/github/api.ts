@@ -104,6 +104,13 @@ export async function getDefaultBranch(): Promise<string> {
 let cachedRemoteUrl: string | null = null;
 
 /**
+ * Clear the cached remote URL. Useful for testing.
+ */
+export function clearRemoteUrlCache(): void {
+  cachedRemoteUrl = null;
+}
+
+/**
  * Check if a remote URL is a GitHub repository.
  */
 export function isGitHubUrl(url: string): boolean {
