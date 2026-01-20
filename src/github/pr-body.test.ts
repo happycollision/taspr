@@ -1,7 +1,7 @@
 import { test, expect, describe } from "bun:test";
 import {
   MARKERS,
-  ALPHA_WARNING,
+  BETA_WARNING,
   stripTrailersFromBody,
   generateBodyContent,
   generateStackLinksContent,
@@ -207,11 +207,11 @@ Some-Trailer: value:with:colons`;
   });
 
   describe("generateFooterContent", () => {
-    test("returns alpha warning", () => {
+    test("returns beta warning", () => {
       const content = generateFooterContent();
-      expect(content).toBe(ALPHA_WARNING);
+      expect(content).toBe(BETA_WARNING);
       expect(content).toContain("Spry");
-      expect(content).toContain("alpha");
+      expect(content).toContain("beta");
     });
   });
 
@@ -267,7 +267,7 @@ Some-Trailer: value:with:colons`;
 
       expect(body).toContain(MARKERS.FOOTER_BEGIN);
       expect(body).toContain(MARKERS.FOOTER_END);
-      expect(body).toContain(ALPHA_WARNING);
+      expect(body).toContain(BETA_WARNING);
     });
 
     test("includes PR template at afterBody location", () => {
@@ -377,7 +377,7 @@ This is the body content.
 ${MARKERS.BODY_END}
 
 ${MARKERS.FOOTER_BEGIN}
-${ALPHA_WARNING}
+${BETA_WARNING}
 ${MARKERS.FOOTER_END}`;
 
       const parts = parsePRBody(body);
@@ -399,7 +399,7 @@ ${MARKERS.STACK_LINKS_BEGIN}
 ${MARKERS.STACK_LINKS_END}
 
 ${MARKERS.FOOTER_BEGIN}
-${ALPHA_WARNING}
+${BETA_WARNING}
 ${MARKERS.FOOTER_END}`;
 
       const parts = parsePRBody(body);
@@ -430,7 +430,7 @@ Body
 ${MARKERS.BODY_END}
 
 ${MARKERS.FOOTER_BEGIN}
-${ALPHA_WARNING}
+${BETA_WARNING}
 ${MARKERS.FOOTER_END}
 
 User appended content here`;
@@ -474,7 +474,7 @@ Old body
 ${MARKERS.BODY_END}
 
 ${MARKERS.FOOTER_BEGIN}
-${ALPHA_WARNING}
+${BETA_WARNING}
 ${MARKERS.FOOTER_END}`;
 
       const updated = generateUpdatedPRBody({
@@ -495,7 +495,7 @@ Old body
 ${MARKERS.BODY_END}
 
 ${MARKERS.FOOTER_BEGIN}
-${ALPHA_WARNING}
+${BETA_WARNING}
 ${MARKERS.FOOTER_END}
 
 My footer notes`;
@@ -520,7 +520,7 @@ ${MARKERS.BODY_END}
 - [x] Tests added
 
 ${MARKERS.FOOTER_BEGIN}
-${ALPHA_WARNING}
+${BETA_WARNING}
 ${MARKERS.FOOTER_END}`;
 
       const updated = generateUpdatedPRBody({
@@ -545,7 +545,7 @@ Old stack links
 ${MARKERS.STACK_LINKS_END}
 
 ${MARKERS.FOOTER_BEGIN}
-${ALPHA_WARNING}
+${BETA_WARNING}
 ${MARKERS.FOOTER_END}`;
 
       const updated = generateUpdatedPRBody({
@@ -567,7 +567,7 @@ Body
 ${MARKERS.BODY_END}
 
 ${MARKERS.FOOTER_BEGIN}
-${ALPHA_WARNING}
+${BETA_WARNING}
 ${MARKERS.FOOTER_END}`;
 
       const updated = generateUpdatedPRBody({

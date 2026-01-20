@@ -10,7 +10,7 @@ import { createHash } from "crypto";
  * - Commit message content (single or group list)
  * - Optional PR template
  * - Stack links showing all PRs in order
- * - Alpha warning footer
+ * - Beta warning footer
  *
  * Preserves user-edited content outside of Spry markers on updates.
  */
@@ -25,8 +25,8 @@ export const MARKERS = {
   FOOTER_END: "<!-- spry:footer:end -->",
 } as const;
 
-export const ALPHA_WARNING =
-  "<sub>Created with [Spry](https://github.com/happycollision/spry) (alpha). Do not manually merge stacked PRs.</sub>";
+export const BETA_WARNING =
+  "<sub>Created with [Spry](https://github.com/happycollision/spry) (beta). Do not manually merge stacked PRs.</sub>";
 
 /** Standard locations for PR templates (checked in order) */
 const PR_TEMPLATE_LOCATIONS = [
@@ -215,10 +215,10 @@ export function generateStackLinksContent(
 }
 
 /**
- * Generate footer content (alpha warning).
+ * Generate footer content (beta warning).
  */
 export function generateFooterContent(): string {
-  return ALPHA_WARNING;
+  return BETA_WARNING;
 }
 
 /**
