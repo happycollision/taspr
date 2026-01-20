@@ -116,8 +116,11 @@ export interface RebaseConflictPrediction {
 }
 
 /**
- * Check if rebasing onto origin/main would cause conflicts WITHOUT actually rebasing.
- * Uses git merge-tree to simulate the rebase.
+ * Check if rebasing onto the remote default branch would cause conflicts.
+ *
+ * Uses git merge-tree to test the rebase without modifying refs or working directory.
+ * May create orphaned commit objects on success path, but these are harmless and
+ * will be cleaned up by git gc.
  *
  * @returns Prediction of whether rebase would succeed
  */
@@ -140,7 +143,9 @@ export async function predictRebaseConflicts(
   // Get commit hashes in order
   const commitHashes = commits.map((c) => c.hash);
 
-  // Use rebasePlumbing in a "simulation" - it uses merge-tree which doesn't modify anything
+  // rebasePlumbing creates git objects but doesn't update refs or working directory.
+  // If it detects a conflict, it returns early without any side effects.
+  // On success, orphaned commit objects are created but harmless (gc will clean them).
   const result = await rebasePlumbing(onto, commitHashes, options);
 
   if (result.ok) {
