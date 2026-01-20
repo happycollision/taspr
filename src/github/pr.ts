@@ -539,7 +539,7 @@ export async function getPRMergeStatus(prNumber: number): Promise<PRMergeStatus>
  *
  * The PR will be automatically closed by GitHub when the commits appear on the base branch.
  */
-export async function landPR(prNumber: number, targetBranch: string = "main"): Promise<LandResult> {
+export async function landPR(prNumber: number, targetBranch: string): Promise<LandResult> {
   await ensureGhInstalled();
 
   // Get PR details
