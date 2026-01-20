@@ -241,7 +241,7 @@ describe("sync: local behavior", () => {
     const repo = await repos.create();
 
     // Create feature branch with a commit
-    await repo.branch("feature");
+    const featureBranch = await repo.branch("feature");
     await repo.commit({ message: "Feature commit" });
 
     // Go back to main and add a local commit (simulating user working on main)
@@ -252,7 +252,7 @@ describe("sync: local behavior", () => {
     await repo.updateOriginMain("Remote main commit");
 
     // Go back to feature branch
-    await repo.checkout(await repo.currentBranch().then(() => "feature-" + repo.uniqueId));
+    await repo.checkout(featureBranch);
 
     // Run sync - should warn about local main but still rebase onto origin/main
     const result = await runSync(repo.path);
