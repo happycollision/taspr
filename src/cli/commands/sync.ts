@@ -25,7 +25,7 @@ import {
   NonGitHubOriginError,
 } from "../../github/api.ts";
 import { getBranchNameConfig, getBranchName, pushBranch } from "../../github/branches.ts";
-import { getSpryConfig, isTempCommit } from "../../git/config.ts";
+import { getSpryConfig, isTempCommit, getDefaultBranchRef } from "../../git/config.ts";
 import {
   findPRsByBranches,
   createPR,
@@ -191,7 +191,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
       // "on-main-branch" and "up-to-date" are silent skips
     }
 
-    // If stack is behind origin/main, check for conflicts then rebase
+    // If stack is behind remote default branch, check for conflicts then rebase
     if (behindMain) {
       // First, predict if rebase would cause conflicts (without actually rebasing)
       const prediction = await predictRebaseConflicts();
@@ -210,9 +210,10 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
             console.log(`   • ...and ${prediction.conflictInfo.files.length - 5} more`);
           }
         }
+        const defaultBranchRef = await getDefaultBranchRef();
         console.log("");
         console.log("To rebase manually when ready:");
-        console.log("  git fetch && git rebase origin/main");
+        console.log(`  git fetch && git rebase ${defaultBranchRef}`);
         console.log("");
         // Continue with sync (don't exit) - user can still push existing branches
       } else {
