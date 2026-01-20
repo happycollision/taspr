@@ -270,15 +270,25 @@ describe("sync: local behavior", () => {
     // Stay on main (don't create a feature branch)
     // Add a commit to origin/main so local is behind
     await repo.updateOriginMain("Remote commit");
+    await repo.fetch();
+
+    // Get SHAs before sync to verify fast-forward was skipped
+    const localMainBefore = (await $`git -C ${repo.path} rev-parse main`.text()).trim();
+    const remoteSha = (await $`git -C ${repo.path} rev-parse origin/main`.text()).trim();
+    expect(localMainBefore).not.toBe(remoteSha); // Confirm local is behind
 
     // Run sync while on main with no commits in stack
     const result = await runSync(repo.path);
 
     expect(result.exitCode).toBe(0);
     // When on main with no stack commits, we shouldn't try to fast-forward
-    // because that would require checking out main (which we're already on)
-    // The current behavior is to just report "No commits in stack"
+    // because that would desync the worktree
     expect(result.stdout).toContain("No commits in stack");
+
+    // Verify fast-forward was NOT performed (local main still behind)
+    const localMainAfter = (await $`git -C ${repo.path} rev-parse main`.text()).trim();
+    expect(localMainAfter).toBe(localMainBefore);
+    expect(localMainAfter).not.toBe(remoteSha);
   });
 
   test("works with non-origin remote name (upstream)", async () => {
