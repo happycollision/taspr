@@ -40,3 +40,5 @@ docker/.env
 
 *.ignore.*
 *.ignore/
+# Claude Code - ignore local settings, keep shared settings
+.claude/settings.local.json
