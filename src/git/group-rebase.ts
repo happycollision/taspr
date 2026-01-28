@@ -343,6 +343,7 @@ export function parseGroupSpec(json: string): GroupSpec {
       spec.groups.push({
         commits: g.commits,
         name: g.name,
+        id: typeof g.id === "string" ? g.id : undefined,
       });
     }
   }

@@ -47,6 +47,22 @@ describe("group-rebase", () => {
       expect(spec.groups[0]!.name).toBe("My Group");
     });
 
+    test("parses spec with group id", () => {
+      const spec = parseGroupSpec(
+        '{"groups": [{"commits": ["a", "b"], "name": "My Group", "id": "existing-id"}]}',
+      );
+      expect(spec.groups).toHaveLength(1);
+      expect(spec.groups[0]!.commits).toEqual(["a", "b"]);
+      expect(spec.groups[0]!.name).toBe("My Group");
+      expect(spec.groups[0]!.id).toBe("existing-id");
+    });
+
+    test("parses spec without group id as undefined", () => {
+      const spec = parseGroupSpec('{"groups": [{"commits": ["a"], "name": "No ID"}]}');
+      expect(spec.groups).toHaveLength(1);
+      expect(spec.groups[0]!.id).toBeUndefined();
+    });
+
     test("throws on invalid JSON", () => {
       expect(() => parseGroupSpec("not json")).toThrow();
     });

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Group titles now display correctly in `sp view` (were showing fallback subjects instead of stored titles)
+- Adding commits to an existing group via `sp group` now preserves the group ID, maintaining PR association
 
 ## [1.0.0-beta.3] - 2026-01-20
 

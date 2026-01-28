@@ -60,6 +60,8 @@ interface CommitDisplayResult {
   commits: CommitDisplay[];
   /** Map of group letter to existing group name (from ref storage) */
   existingGroupNames: Map<string, string>;
+  /** Map of group letter to existing group ID (from trailers) */
+  existingGroupIds: Map<string, string>;
 }
 
 /**
@@ -89,7 +91,10 @@ function toCommitDisplays(
 
   // Build map of letter -> existing name from ref storage
   const existingGroupNames = new Map<string, string>();
+  // Build map of letter -> existing group ID (reverse of groupMap)
+  const existingGroupIds = new Map<string, string>();
   for (const [groupId, letter] of groupMap) {
+    existingGroupIds.set(letter, groupId);
     const title = groupTitles[groupId];
     if (title) {
       existingGroupNames.set(letter, title);
@@ -112,7 +117,7 @@ function toCommitDisplays(
     return display;
   });
 
-  return { commits: displayCommits, existingGroupNames };
+  return { commits: displayCommits, existingGroupNames, existingGroupIds };
 }
 
 /**
@@ -444,7 +449,10 @@ export async function runGroupEditor(): Promise<GroupEditorResult> {
   }
 
   // Convert to display format
-  const { commits: displayCommits, existingGroupNames } = toCommitDisplays(commits, groupTitles);
+  const { commits: displayCommits, existingGroupNames, existingGroupIds } = toCommitDisplays(
+    commits,
+    groupTitles,
+  );
 
   // Create initial state
   const initialState = createInitialState(displayCommits);
@@ -522,11 +530,17 @@ export async function runGroupEditor(): Promise<GroupEditorResult> {
       // Track PRs that need to be closed
       prsToClose.push(...adoption.closePRs);
 
+      // Determine the group ID to use:
+      // 1. If PR adoption selected an ID, use that
+      // 2. Otherwise, if this letter corresponds to an existing group, preserve that ID
+      // 3. Otherwise, let applyGroupSpec generate a new ID
+      const groupId = adoption.id ?? existingGroupIds.get(letter);
+
       // Build group assignment with optional inherited ID
       groups.push({
         commits: commitHashes,
         name,
-        id: adoption.id ?? undefined,
+        id: groupId,
       });
     }
   }
